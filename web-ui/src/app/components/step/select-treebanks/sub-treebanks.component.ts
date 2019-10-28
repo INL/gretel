@@ -23,13 +23,14 @@ export class SubTreebanksComponent implements OnChanges, OnDestroy {
     private subscriptions: Subscription[];
 
     public components: ComponentSelection;
-    public componentGroups: ComponentGroup[];
-    public variants: VariantSelection[];
+    public componentGroups?: ComponentGroup[];
+    public variants?: VariantSelection[];
 
     public allSelected = true;
 
     public loading = true;
 
+    public showComponents = false;
     /** Only show if any sub-treebank has a description available. */
     public showDescription: boolean;
     public showWordCount: boolean;
@@ -116,7 +117,8 @@ export class SubTreebanksComponent implements OnChanges, OnDestroy {
     }
 
     private updateSelections(components: TreebankComponents, variants?: string[]) {
-        this.components = Object.entries(components || {}).reduce(
+        const compArr = Object.entries(components || {});
+        this.components = compArr.reduce(
             (dict, [id, component]) => {
                 const selected = this.selection.isSelected(
                     this.treebank.provider,
@@ -136,6 +138,13 @@ export class SubTreebanksComponent implements OnChanges, OnDestroy {
         if (this.components) {
             this.allSelected = Object.values(this.components).every(component => this.isComponentSelectedOrDisabled(component));
         }
+
+        this.showComponents = compArr.length <= 50 || !!(
+            this.variants &&
+            this.variants.length &&
+            this.componentGroups &&
+            this.componentGroups.length
+        );
     }
 
     private updateTotals() {

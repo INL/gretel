@@ -1,7 +1,11 @@
 <div class="section" *ngIf="loading">
     <progress class="progress is-primary is-large" max="100">Loading...</progress>
 </div>
-<table class="table is-hoverable is-fullwidth" *ngIf="!loading">
+<div *ngIf="!loading && !showComponents" class="section" style="padding-top: 0;">
+    <em>This treebank contains many components, are you sure you want to list them all?</em><br>
+    <button type="button" class="button is-primary" (click)="showComponents = true">Show all components</button>
+</div>
+<table class="table is-hoverable is-fullwidth" *ngIf="!loading && showComponents">
     <thead>
         <tr>
             <th [attr.colspan]="variants ? variants.length : 1">
@@ -45,7 +49,7 @@
         </tr>
     </thead>
 
-    <tbody *ngIf="(!componentGroups || !variants) else withGroups">
+    <tbody *ngIf="(!componentGroups || !variants) else withGroups" style="max-height: 500px; overflow-y: auto;">
         <tr *ngFor="let c of components | keyvalue" (click)="toggleComponent(c.value)">
             <!-- TODO move into named template -->
             <td>
@@ -63,7 +67,7 @@
         </tr>
     </tbody>
     <ng-template #withGroups>
-        <tbody>
+        <tbody style="max-height: 500px; overflow-y: auto;">
             <tr *ngFor="let group of componentGroups" (click)="toggleGroup(group)">
                 <td *ngFor="let variant of variants">
                     <label [class]="treebank.multiOption ? 'checkbox' : 'radio'"
