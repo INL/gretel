@@ -1,17 +1,40 @@
-.logo-wrapper {
-    float: right;
-    width: 200px;
-    max-width: 100%;
-}
+// .logo-wrapper {
+//     float: right;
+//     width: 200px;
+//     max-width: 100%;
+// }
 
-.university-logo,
-.lab-logo {
-    padding: 10px;
+// @import "~bulma/sass/utilities/initial-variables";
+@import "~bulma/sass/utilities/mixins";
+
+.uu-logo,
+.dig-logo,
+.gretel-logo,
+.clariah-logo,
+.int-logo {
     display: inline-block;
+    max-width: 200px;
 }
 
-.lab-logo {
+.dig-logo {
+    padding: 10px;
     background-color: #3273dc;
+}
+
+.column.logo {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    @include until($tablet) {
+        justify-content: flex-start;
+    }
+}
+
+.gretel-logo {
+    width: 100%;
+    max-width: 200px;
+    height: auto;
 }
 
 .version {
