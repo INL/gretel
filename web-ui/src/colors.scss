@@ -1,6 +1,12 @@
-$primary: rgba(168, 205, 40, 1);
-$secondary: #7E6748;
-$secondary-invert: white;
+$primary: #4e7c11;
+// $primary-invert: #4e4e4e;
+$secondary: hsl(33, 24%, 31%);
+$secondary-invert: #fff;
+
+// $text: #4e4e4e;
+// $text-light: #4e4e4e;
+
+
 
 @import "~bulma/sass/utilities/initial-variables";
 @import "~bulma/sass/utilities/functions";
