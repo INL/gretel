@@ -20,7 +20,8 @@
     </div>
 </div>
 
-<ng-container *ngFor="let treebank of treebanks">
+<ng-container *ngFor="let treebank of treebanks; let i = index">
+    <h3 class="subtitle" *ngIf="i === 0 || treebanks[i-1].provider !== treebank.provider">{{treebank.provider}}</h3>
     <div class="field">
         <label class="checkbox">
             <input type="checkbox" [value]="treebank.id" [checked]="treebank.selected"

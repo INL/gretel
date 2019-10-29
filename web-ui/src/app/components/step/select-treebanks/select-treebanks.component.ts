@@ -27,7 +27,10 @@ export class SelectTreebanksComponent extends StepComponent<GlobalStateExampleBa
 
         this.subscriptions = [
             treebankService.treebanks.pipe(
-                map(lookup => Object.values(lookup.data).flatMap(provider => Object.values(provider))))
+                map(lookup =>
+                    Object.values(lookup.data)
+                    .flatMap(provider => Object.values(provider))
+                ))
                 .subscribe(treebanks => {
                     this.treebanks = treebanks.map(treebank => ({
                         ...treebank,
