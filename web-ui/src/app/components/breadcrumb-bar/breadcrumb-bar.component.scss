@@ -1,3 +1,106 @@
-.breadcrumb {
+@import '../../../colors.scss';
+
+.breadcrumb.grt-breadcrumb {
     padding: 10px 0;
+    display: inline-flex;
+
+    ul {
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    li:before {
+        display: block;
+        position: absolute;
+        left: 100%;
+        top: 50%;
+        // background: red;
+        content: " ";
+        z-index: 2;
+        transform: translate(-60%, -50%);
+        border-left: 30px solid transparent;
+        border-top: 50px solid transparent;
+        border-bottom: 50px solid transparent;
+
+    }
+    li:after {
+        display: block;
+        position: absolute;
+        left: 100%;
+        top: 50%;
+        // background: red;
+        content: " ";
+        z-index: 1;
+        transform: translate(-60%, -50%);
+        border-left: 30px solid white;
+        border-top: 50px solid transparent;
+        border-bottom: 50px solid transparent;
+        margin-left: 2px;
+    }
+
+    li {
+        padding: 0;
+        display: inline-block;
+        background: darken($primary, 5);
+        position: relative;
+
+        a {
+            padding: 6px 12px 6px 18px;
+            color: $primary-invert!important;
+            display: inline-block;
+            z-index: 3;
+            position: relative;
+        }
+
+        &:last-child {
+            a {
+                padding-right: 18px;
+            }
+        }
+
+        &:before {
+            border-left-color: darken($primary, 5);
+        }
+    }
+
+    li.is-active {
+        background: $primary;
+        &:before {
+            border-left-color: $primary;
+        }
+    }
+
+
+    li.is-active~li {
+        background: #ccc;
+        a {
+            color: $text;
+        }
+
+        &:before {
+            border-left-color: #ccc;
+        }
+    }
+
+    li:not(.is-active) {
+        &:hover,
+        &:focus,
+        &:active {
+            background-color: $info!important;
+
+            a {
+                color: $info-invert!important;
+            }
+            &:before {
+                border-left-color: $info!important;
+            }
+        }
+    }
+
+    li:last-child {
+        &:before, &:after {
+            display: none;
+        }
+    }
 }
+
