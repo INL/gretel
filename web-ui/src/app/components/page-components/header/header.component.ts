@@ -23,7 +23,7 @@ export class HeaderComponent implements OnDestroy, OnInit {
     private subscriptions: Subscription[] = [];
     private messageId: number;
     message: string;
-    messageType: 'is-warning' | 'is-error';
+    messageType: 'is-warning' | 'is-danger';
     show = false;
 
     constructor(private notificationService: NotificationService, private ngZone: NgZone) {
@@ -40,7 +40,7 @@ export class HeaderComponent implements OnDestroy, OnInit {
                         return;
 
                     case 'error':
-                        this.messageType = 'is-error';
+                        this.messageType = 'is-danger';
                         break;
 
                     case 'warning':

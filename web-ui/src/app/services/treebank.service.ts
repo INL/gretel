@@ -392,7 +392,12 @@ export class TreebankService {
             // get url for provider (wrap provider in array or zip will unpack the string into characters)
             flatMap(provider => zip([provider], this.configurationService.getApiUrl(provider, 'configured_treebanks'))),
             // get treebanks for provider
-            flatMap(([provider, url]) => this.getConfiguredTreebanks(provider, url)),
+            flatMap(([provider, url]) => this.getConfiguredTreebanks(provider, url)
+                .catch((error: HttpErrorResponse) => {
+                    NotificationService.addError(error);
+                    return [];
+                })
+            ),
             // unpack multiple treebank results into distinct messages
             flatMap(treebanks => treebanks),
         );
