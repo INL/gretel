@@ -66,7 +66,11 @@ function getServerInfo($corpus, $component = null)
     }
 }
 
-// Remove false-y items and spaces-only items from array
+/**
+ * Remove false-y items and spaces-only items from array
+ * @param string[] $array
+ * @return string[]
+ */
 function array_cleaner($array)
 {
     $array = array_map('trim', $array);

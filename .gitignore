@@ -28,3 +28,7 @@ js/ts/**
 
 vendor
 !lassy-xpath/.gitignore
+
+
+# chn-gretel
+chn-gretel/

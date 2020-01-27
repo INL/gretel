@@ -5,6 +5,7 @@ require_once ROOT_PATH.'/functions.php';
 require_once ROOT_PATH.'/basex-search-scripts/basex-client.php';
 require_once ROOT_PATH.'/basex-search-scripts/metadata.php';
 require_once ROOT_PATH.'/basex-search-scripts/treebank-count.php';
+require_once ROOT_PATH.'/basex-search-scripts/treebank-utils.php';
 
 function getTreebankCounts($corpus, $components, $xpath)
 {
@@ -13,7 +14,7 @@ function getTreebankCounts($corpus, $components, $xpath)
 
     $counts = array();
     foreach($components as $component) {
-        $databases = getDatabases($corpus, $component, $xpath);
+        $databases = getUngrindedDatabases($corpus, $component);
         $counts[$component] = getCounts($corpus, $databases, $session, $xpath);
     }
 

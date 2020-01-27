@@ -8,7 +8,7 @@
     "serve": "ng serve --proxy-config proxy.conf.json",
     "serve:live": "ng serve --proxy-config proxy.live.conf.json",
     "serve:poll": "ng serve --poll=2000 --host 0.0.0.0 --proxy-config proxy.conf.json",
-    "build": "npm run build-pre && ng build --prod --base-href=/ng/ --output-path=../ng",
+    "build": "npm run build-pre && node --max_old_space_size=4096 ./node_modules/.bin/ng build --prod --base-href=/chn-gretel/ng/ --output-path=../chn-gretel/ng",
     "build-pre": "node ./build/build-pre.js",
     "test": "ng test",
     "lint": "ng lint",

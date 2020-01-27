@@ -81,10 +81,10 @@ export class ResultsService {
             const worker = async () => {
                 let iteration = 0;
                 let remainingComponents: string[] = componentIds;
+                let visitedDatabases: string[] = [];
                 let remainingDatabases: string[] | null = null;
 
                 let searchLimit: number | null = null;
-                let needRegularGrinded = false;
 
                 while (!observer.closed) {
                     let results: SearchResults | false | null = null;
@@ -97,12 +97,12 @@ export class ResultsService {
                             corpus,
                             remainingComponents,
                             remainingDatabases,
+                            visitedDatabases,
                             iteration,
                             retrieveContext,
                             isAnalysis,
                             metadataFilters,
                             variables,
-                            needRegularGrinded,
                             searchLimit
                         );
                     } catch (e) {
@@ -113,11 +113,11 @@ export class ResultsService {
                         if (results) {
                             observer.next(results);
 
-                            needRegularGrinded = results.needRegularGrinded;
                             searchLimit = results.searchLimit;
                             iteration = results.nextIteration;
                             remainingComponents = results.remainingComponents;
                             remainingDatabases = results.remainingDatabases;
+                            visitedDatabases = results.visitedDatabases;
 
                             if (remainingDatabases.length === 0 && remainingComponents.length === 0) {
                                 observer.complete();
@@ -146,12 +146,13 @@ export class ResultsService {
      * @param remainingComponents Identifiers of the sub-treebanks to search
      * @param remainingDatabases
      * Identifiers of the databases within the current sub-treebank (components[0]) left to search. All dbs searched when null
+     * @param visitedDatabases
+     * Identifiers of databases already searched, is needed to prevent duplicate results in grinded datasets
      * @param iteration Zero-based iteration number of the results
      * @param retrieveContext Get the sentence before and after the hit
      * @param isAnalysis Whether this search is done for retrieving analysis results, in that case a higher result limit is used
      * @param metadataFilters The filters to apply for the metadata properties
      * @param variables Named variables to query on the matched hit (can be determined using the Extractinator)
-     * @param needRegularGrinded search mode (filled in from server)
      * @param searchLimit filled in on server when null
      */
     private async results(
@@ -160,6 +161,7 @@ export class ResultsService {
         corpus: string,
         remainingComponents: string[],
         remainingDatabases: string[] | null = null,
+        visitedDatabases: string[],
 
         iteration: number = 0,
         retrieveContext: boolean,
@@ -167,7 +169,6 @@ export class ResultsService {
         metadataFilters = this.defaultMetadataFilters,
         variables = this.defaultVariables,
 
-        needRegularGrinded = false,
         searchLimit: number | null = null
     ): Promise<SearchResults | false> {
         const results = await this.http.post<ApiSearchResult | false>(
@@ -177,10 +178,10 @@ export class ResultsService {
                 corpus,
                 remainingComponents,
                 remainingDatabases,
+                visitedDatabases,
                 iteration,
                 isAnalysis,
                 variables,
-                needRegularGrinded,
                 searchLimit
             }, httpOptions).toPromise();
         if (results) {
@@ -374,14 +375,14 @@ export class ResultsService {
                 nextIteration: results.endPosIteration,
                 remainingComponents: results.remainingComponents,
                 remainingDatabases: results.remainingDatabases,
-                needRegularGrinded: results.needRegularGrinded,
+                visitedDatabases: results.visitedDatabases,
                 searchLimit: results.searchLimit
             } : {
                 hits: [],
                 nextIteration: 0,
                 remainingDatabases: [],
                 remainingComponents: [],
-                needRegularGrinded: false,
+                visitedDatabases: [],
                 searchLimit: 0
             };
     }
@@ -501,7 +502,7 @@ type ApiSearchResult = {
     success: true
     /** Plain text sentences containing the hit */
     sentences: { [id: string]: string },
-    /** Origin of the sentence (used for Grinded corpora) */
+    /** Database ID where the sentence was found (used for Grinded corpora) */
     tblist: false | { [id: string]: string },
     /** Node ids (dash-separated ids of the matched nodes) */
     idlist: { [id: string]: string },
@@ -519,12 +520,12 @@ type ApiSearchResult = {
     remainingComponents: string[],
     /** Databases left to search for this component (if this is empty, the search is done) */
     remainingDatabases: string[],
+    /** Server-side state to prevent certain databases from being searched twice in grinded datasets. */
+    visitedDatabases: string[],
     /** Component ID where each hit originated */
     sentenceDatabases: { [id: string]: string },
     /** The XQuery used to retrieve the results */
     xquery: string,
-    /** For grinded corpora only - the search mode used */
-    needRegularGrinded: boolean,
     /** Search limit */
     searchLimit: number
 } | {
@@ -543,7 +544,8 @@ export interface SearchResults {
     remainingComponents: string[];
     /** Databases remaining in current component (for doing a paged search) */
     remainingDatabases: string[];
-    needRegularGrinded: boolean;
+    /** Some serverside bookkeeping to prevent certain databases from being searched twice in grinded datasets. */
+    visitedDatabases: string[];
     searchLimit: number;
 }
 

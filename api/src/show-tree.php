@@ -25,7 +25,7 @@ function showTree($sentid, $treebank, $component, $database)
         $serverInfo = getServerInfo($treebank, $component);
         $session = new Session($serverInfo['machine'], $serverInfo['port'], $serverInfo['username'], $serverInfo['password']);
 
-        $xquery = 'db:open("'.$database.'")/treebank/alpino_ds[@id="'.$sentid.'"]';
+        $xquery = "db:open(\"$database\")/treebank/alpino_ds[@id=\"$sentid\"]";
         $query = $session->query($xquery);
 
         $xml = $query->execute();

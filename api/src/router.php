@@ -90,7 +90,7 @@ $router->map('POST', '/treebank_counts', function () {
 });
 
 $router->map('POST', '/results', function () {
-    global $resultsLimit, $analysisLimit, $analysisFlushLimit, $flushLimit, $needRegularGrinded;
+    global $resultsLimit, $analysisLimit, $analysisFlushLimit, $flushLimit;
     isset($analysisLimit) or $analysisLimit = $resultsLimit;
 
     $input = file_get_contents('php://input');
@@ -117,13 +117,9 @@ $router->map('POST', '/results', function () {
         ? $data['remainingDatabases']
         : null;
 
-    // Some xpaths are faster on the plain data even in grinded corpora
-    // This variable indicates that this is one of those edge cases.
-    // If it is true, use the normal process of searching, even for grinded databases.
-    // The $already and $databases variables will follow the normal conventions.
-    // ($databases will contain the component names, and $already will be null).
-    // (may already hFave been set true in getDatabases when this is a grinded corpus).
-    $needRegularGrinded = $needRegularGrinded || (bool) $data['needRegularGrinded'];
+    $visitedDatabases = isSet($data['visitedDatabases'])
+        ? $data['visitedDatabases']
+        : array();
 
     // Limit on total results to return
     $searchLimit = $data['isAnalysis'] ? $analysisLimit : $resultsLimit;
@@ -133,31 +129,85 @@ $router->map('POST', '/results', function () {
     $flushLimit = $data['isAnalysis'] ? $analysisFlushLimit : $flushLimit;
     $flushLimit = min($flushLimit, $searchLimit);
 
-    // We only search one component at a time.
-    $results = getResults(
+    list(
+        'remainingComponents' => $newRemainingComponents,
+        'remainingDatabases' => $newRemainingDatabases,
+        'visitedDatabases' => $newVisitedDatabases,
+        'start' => $newStart,
+        'hits' => $hits,
+        'xquery' => $xquery
+    ) = getResults(
         $xpath,
         $context,
         $corpus,
         $components,
         $databases,
+        $visitedDatabases,
         $start,
         $flushLimit,
         $variables
     );
 
-    if ($results['success']) {
-        // append the actual search limit from the configuration
-        $results['searchLimit'] = $searchLimit - count($results['sentences']);
-        $results['needRegularGrinded'] = $needRegularGrinded;
-        if ($results['searchLimit'] <= 0) {
-            // clear the remaining databases to signal the search is done
-            $results['remainingDatabases'] = array();
-            $results['remainingComponents'] = array();
-        }
+    $response = array(
+        'success' => true,
+        /** sentence id => sentence text (has format of ${before} <em>${sentence}</em> ${after} if context was requested) */
+        'sentences' => array(),
+        /** sentence id => database id (relevant in the case grinded datasets) */
+        'tblist' => array(),
+        /** sentence id => dash-separated list of node id's in the hit (e.g. "10-11-12-15-19") */
+        'idlist' => array(),
+        /** like idlist, but for the @start attribute of those matched nodes */
+        'beginlist' => array(),
+        /** sentence id => xml of the matched portion of the tree (not always the entire sentence - does not include context sentences (if requested)) */
+        'xmllist' => array(),
+        /** sentence id => xml of the sentence's metadata, usually empty */
+        'metalist' => array(),
+        /** sentence id => xml structure containing the results of the requested variables */
+        'varlist' => array(),
+        /** sentence id => component id */
+        'sentenceDatabases' => array(),
+
+        /** amount of results already obtained from the current database */
+        'endPosIteration' => $newStart,
+        'remainingComponents' => $newRemainingComponents,
+        'remainingDatabases' => $newRemainingDatabases,
+        'visitedDatabases' => $newVisitedDatabases,
+
+        'searchLimit' => $searchLimit - count($hits),
+        'xquery' => $xquery,
+    );
+
+    foreach ($hits as list(
+        'sentid' => $id,
+        'sentence' => $sentence,
+        // in all cases, this is the ungrinded database in which the sentence can be found.
+        'database' => $sourceDatabase,
+        'nodeIds' => $nodeIds,
+        'nodeStartIds' => $nodeStartIds,
+        'component' => $component,
+        'meta' => $treeMetadataXml,
+        'xml' => $nodeXml,
+        'variableResults' => $variableResults
+    )) {
+        $response['sentences'][$id] = $sentence;
+        $response['tblist'][$id] = $sourceDatabase;
+        $response['idlist'][$id] = $nodeIds;
+        $response['beginlist'][$id] = $nodeStartIds;
+        $response['xmllist'][$id] = $nodeXml;
+        $response['metalist'][$id] = $treeMetadataXml;
+        $response['varlist'][$id] = $variableResults;
+        $response['sentenceDatabases'][$id] = $component;
+    }
+
+    if ($searchLimit <= count($hits)) {
+        $response['remainingDatabases'] = array();
+        $response['visitedDatabases'] = array();
+        $response['remainingComponents'] = array();
+        $response['endPosIteration'] = 0;
     }
 
     header('Content-Type: application/json');
-    echo json_encode($results);
+    echo json_encode($response);
 });
 
 // match current request url

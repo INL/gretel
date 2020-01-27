@@ -1,6 +1,7 @@
 <?php
 
 require_once 'treebank-search.php';
+require_once 'treebank-utils.php';
 
 /**
  * Retrieves the metadata fields of the current corpus.
@@ -24,7 +25,7 @@ function get_metadata_fields()
  * Retrieves the metadata counts for the current corpus and XPath query.
  *
  * @param string $corpus
- * @param string[] $components
+ * @param string[] $componentsgetUngrindedDatabases
  * @param string $xpath
  *
  * @return array Metadata per subcorpus
@@ -33,7 +34,7 @@ function get_metadata_counts($corpus, $components, $xpath)
 {
 
     foreach($components as $component) {
-        $databases = getDatabases($corpus, $component, $xpath);
+        $databases = getUngrindedDatabases($corpus, $component);
         $serverInfo = getServerInfo($corpus, $component);
         $session = new Session($serverInfo['machine'], $serverInfo['port'], $serverInfo['username'], $serverInfo['password']);
 

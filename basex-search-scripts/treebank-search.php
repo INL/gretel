@@ -33,221 +33,63 @@ function getMoreIncludes($database, $session)
 }
 
 /**
- * Sometimes a component is split up into multiple databases (sometimes hundreds!)
- * These should be stored in a file containing the database names, one per line.
- * If the file is missing, the original component is assumed to share its name with its database.
- *
- * @param string $corpus
- * @param string $component
- *
- * @return string[]
+ * @return {
+ *  success: boolean,
+ *  xquery: string,
+ *  // results only filled if query was a success
+ *  results?: Array
+ * }
  */
-function getUngrindedDatabases($corpus, $component)
+function getSentences($isGrindedSearch, $corpus, $component, $database, $start, $session, $searchLimit, $xpath, $context, $variables = null)
 {
-    $path = ROOT_PATH."/treebank-parts/$corpus/$component.lst";
-    if (file_exists($path)) {
-        $databasesForComponent = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    } else {
-        $databasesForComponent = false;
-    }
-
-    return $databasesForComponent ?: array($component);
-}
-
-/**
- * Databases containing grinded data ofter refer each other.
- * Retrieve the recursive includes for this database (result does not include this db itself).
- * For some xpaths this does not apply, because the search runs faster in the normal databases.
- * This function resolves the databases to use and sets the global $needRegularGrinded depending
- * on whether to use dbs containing the normal (true) or grinded data (false).
- *
- * @param string       $corpus
- * @param string       $component
- * @param string|false $bf
- *
- * @return string[]
- */
-function getGrindedDatabases($corpus, $component, $bf)
-{
-    // TODO factor out $needRegularGrinded.
-    global $cats, $needRegularGrinded;
-
-    // Depending on the xpath sometimes searching the normal data is still faster.
-    if (!$bf || $bf === 'ALL') {
-        $needRegularGrinded = true;
-
-        return getUngrindedDatabases($corpus, $component);
-    }
-
-    $needRegularGrinded = false;
-    $databases = array();
-
-    // If is substring (eg. ALLnp%det)
-    if (strpos($bf, 'ALL') !== false) {
-        foreach ($cats as $cat) {
-            $bfcopy = $component.str_replace('ALL', $cat, $bf);
-            $databases[] = $bfcopy;
-        }
-    } else {
-        $databases[] = $component.$bf;
-    }
-
-    $serverInfo = getServerInfo($corpus, $component);
-    $session = new Session($serverInfo['machine'], $serverInfo['port'], $serverInfo['username'], $serverInfo['password']);
-
-    // recursively expand the databases and verify they exist.
-    $seenDatabases = array();
-    while (!empty($databases)) {
-        $database = array_pop($databases);
-        if (array_key_exists($database, $seenDatabases)) {
-            continue;
-        }
-        if ($session->query("db:exists('$database')")->execute() == 'false') {
-            continue;
-        }
-
-        $seenDatabases[$database] = true;
-
-        foreach (getMoreIncludes($database, $session) as $newdb) {
-            $databases[] = $newdb;
-        }
-    }
-    $session->close();
-
-    return array_keys($seenDatabases);
-}
-
-/**
- * Get the databases to query for this component.
- * The xpath is required because it controls the databases to use when the corpus is grinded.
- * Might return the original database anyway if the xpath would run faster on that one
- * (and the component is not otherwise split up into multiple dbs).
- *
- * @param string $corpus
- * @param string $component
- * @param string $xpath
- *
- * @return string[]
- */
-function getDatabases($corpus, $component, $xpath)
-{
-    if (!isGrinded($corpus)) {
-        return getUngrindedDatabases($corpus, $component);
-    }
-
-    // Now for the grinded case:
-    $bf = xpathToBreadthFirst($xpath);
-
-    return getGrindedDatabases($corpus, $component, $bf);
-}
-
-/**
- * @param string   $corpus          the corpus we're searching
- * @param string   $component       the component we're searching
- * @param string[] $databases       the databases that remain to be searched in this component
- * @param int      $start           index of first sentence to retrieve (in the current database, that's the last db in the array)
- * @param Session  $session         the basex session
- * @param int      $searchlimit     max number of sentences to return
- * @param array    $variables       An array with variables to return. Each element should contain name and path.
- */
-function getSentences($corpus, $component, $databases, $start, $session, $searchLimit, $xpath, $context, $variables = null)
-{
-    global $needRegularGrinded;
-
-    $xquery = 'N/A';
     try {
-        while ($database = array_pop($databases)) {
-            $xquery = createXquery($corpus, $component, $database, $start, $start+$searchLimit, $needRegularGrinded, $context, $xpath, $variables);
-            $query = $session->query($xquery);
-            $result = $query->execute();
-            $query->close();
-
-            if (!$result || $result == 'false') {
-                // go to the next database and start at its first hit
-                $start = 0;
-                continue;
-            }
-
-            $matches = explode('</match>', $result);
-            $matches = array_cleaner($matches);
-
-            while ($match = array_shift($matches)) {
-                $match = str_replace('<match>', '', $match);
-
-                if (isGrinded($corpus)) {
-                    list($sentid, $sentence, $tb, $ids, $begins) = explode('||', $match);
-                } else {
-                    list($sentid, $sentence, $ids, $begins, $xml_sentences, $meta) = explode('||', $match);
-                }
-
-                if (isset($sentid, $sentence, $ids, $begins)) {
-                    --$searchLimit;
-                    ++$start;
-
-                    $sentid = trim($sentid);
-
-                    // Add unique identifier to avoid overlapping sentences w/ same ID
-                    $sentid .= '+match='.$start;
-
-                    $sentences[$sentid] = $sentence;
-                    $idlist[$sentid] = $ids;
-                    $beginlist[$sentid] = $begins;
-                    $xmllist[$sentid] = $xml_sentences;
-                    $metalist[$sentid] = $meta;
-                    preg_match('/<vars>.*<\/vars>/s', $match, $varMatches);
-                    $varList[$sentid] = count($varMatches) == 0 ? '' : $varMatches[0];
-                    if (isGrinded($corpus)) {
-                        $tblist[$sentid] = $tb;
-                    }
-                    $sentenceDatabases[$sentid] = $component;
-                }
-            }
-            // Done processing all results in this database
-            // if we're limited by the amount we're asked to retrieve 
-            // there might have been more hits, in this case, re-add the database to the list 
-            // since we're probably not finished.
-            if ($searchLimit <= 0) {
-                array_push($databases, $database);
-                break;
-            }
-
-            // We exhausted this database, but more hits remain to be retrieved this run
-            // reset the start for the next database
-            $start = 0;
-        }
-
-        if (isset($sentences)) {
-            if (!isGrinded($corpus)) {
-                $tblist = false;
-            }
-
-            return array(
-                'success' => true,
-                'sentences' => $sentences,
-                'tblist' => $tblist,
-                'idlist' => $idlist,
-                'beginlist' => $beginlist,
-                'xmllist' => $xmllist,
-                'metalist' => $metalist,
-                'varlist' => $varList,
-                'endPosIteration' => $start,
-                'remainingDatabases' => $databases,
-                'sentenceDatabases' => $sentenceDatabases,
-                'xquery' => $xquery,
-            );
-        } else {
-            // in case there are no results to be found
-            return array('success' => false, 'xquery' => $xquery);
-        }
+        $xquery = createXquery($isGrindedSearch, $component, $database, $start, $start+$searchLimit, $context, $xpath, $variables);
+        $query = $session->query($xquery);
+        $result = $query->execute();
+        $query->close();
     } catch (Exception $e) {
         // allow a developer to directly debug this query (log is truncated)
-        echo $xquery;
-        http_response_code(500);
-        die;
+        return array(
+            'success' => false,
+            'xquery' => $xquery,
+            'error' => "Could not execute query: ".$e->getMessage(),
+        );
     }
+
+    $matches = explode('</match>', $result);
+    $matches = array_cleaner($matches);
+
+    $results = array();
+    while ($match = array_shift($matches)) {
+        $match = str_replace('<match>', '', $match);
+
+        list($sentid, $sentence, $sourceDatabase, $nodeIds, $nodeStartIds, $nodeXml, $treeMetadataXml, $variableResults) = explode('||', $match);
+        if (isset($sentid, $sentence, $nodeIds, $nodeStartIds)) { // just to weed out some erroneous hits
+            $hit = array(
+                'sentid' => trim($sentid)."+match=".($start+count($results)),
+                'sentence' => trim($sentence),
+                // in all cases, this is the ungrinded database in which the sentence can be found.
+                'database' => trim($sourceDatabase),
+                'nodeIds' => trim($nodeIds),
+                'nodeStartIds' => trim($nodeStartIds),
+                'component' => trim($component),
+                'meta' => trim($treeMetadataXml),
+                'xml' => trim($nodeXml),
+                'variableResults' => trim($variableResults),
+            );
+
+            $results[] = $hit;
+        }
+    }
+
+    return array(
+        'success' => true,
+        'results' => $results,
+        'xquery' => $xquery
+    );
 }
 
-function createXquery($corpus, $component, $database, $start, $end, $needRegularGrinded, $context, $xpath, $variables)
+function createXquery($isGrindedSearch, $component, $database, $start, $end, $context, $xpath, $variables)
 {
     $variable_declarations = '';
     $variable_results = '';
@@ -264,69 +106,116 @@ function createXquery($corpus, $component, $database, $start, $end, $needRegular
         $variable_results = '<vars>'.$variable_results.'</vars>';
     }
 
-    $for = 'for $node in db:open("'.$database.'")/treebank';
-    if (isGrinded($corpus) && !$needRegularGrinded) {
-        $for .= '/tree';
-        $tree = 'let $tree := ($node/ancestor::tree)';
-        $sentence = '
+
+    /**
+     * grind structure:
+     * <treebank component="COMPONENTNAME" cat="(advp|inf|...)" file="...">
+     *  <tree id="sentence_id">
+     *      <node.../>
+     *  </tree>
+     * </treebank>
+     *
+     * sentence2treebank.xml
+     *
+     * <sentence2treebank>
+     *  <sentence nr="sentence_id">sentence text goes here</sentence>
+     * </sentence2treebank>
+     */
+
+    if ($isGrindedSearch) {
+        $query = "
+for \$node in db:open(\"$database\")/treebank/tree"./* should have only one slash when grinding*/('/'.preg_replace('/^\/+/', '', $xpath))."
+    let \$tree := (\$node/ancestor::tree)
+    let \$sentid := (\$tree/@id)
+    let \$meta := (\$tree/metadata/meta)
+
+    return for \$sentence in (db:open(\"{$component}sentence2treebank\")/sentence2treebank/sentence[@nr=\$sentid])
+        (:
+        if the non-grinded component data is split into parts, tb contains the part id.
+        Usually this is the component name followed by a number, such as GRIND00012,
+        This is only present if the non-grinded data is split into multiple parts.
+        If the original data is in one file/database, @part does not exist,
+        and data is contained in a database with the exact name of the component
+        instead of with suffixed numbers.
+        :)
+        let \$ungrindedDatabase := (\$sentence/@part)
+        let \$ids := (\$node//@id)
+        let \$indexs := (distinct-values(\$node//@index))
+        let \$indexed := (\$tree//node[@index=\$indexs])
+        let \$begins := ((\$node | \$indexed)//@begin)
+        let \$beginlist := (distinct-values(\$begins))
+        ".($context?"
+        let \$text := fn:replace(\$sentid[1], \'(.+?)(\d+)$\', \'$1\')
+        let \$snr := fn:replace(\$sentid[1], \'(.+?)(\d+)$\', \'$2\')
+
+        let \$prev := (number(\$snr)-1)
+        let \$next := (number(\$snr)+1)
+
+        let \$previd := concat(\$text, \$prev)
+        let \$nextid := concat(\$text, \$next)
+
+        let \$prevs := root(\$sentence)/sentence2treebank/sentence[@nr=\$previd]
+        let \$nexts := root(\$sentence)/sentence2treebank/sentence[@nr=\$nextid]":"")."
+        $variable_declarations
+
+        return
+        <match>
+            {data(\$sentid)}
+            ||".($context?"
+            {data(\$prevs)} <em>{data(\$sentence)}</em> {data(\$nexts)}":"
+            {data(\$sentence)}")."
+            ||
+            {data(\$ungrindedDatabase)}
+            ||
+            {string-join(\$ids, '-')}
+            ||
+            {string-join(\$beginlist, '-')}
+            ||
+            {\$node}
+            ||
+            {\$meta}
+            ||
+            $variable_results
+        </match>";
+    } else {
+        $query = "
+for \$node in db:open(\"$database\")/treebank{$xpath}
+    let \$tree := (\$node/ancestor::alpino_ds)
+    let \$sentid := (\$tree/@id)
+    let \$sentence := (\$tree/sentence)
+    let \$ids := (\$node//@id)
+    let \$indexs := (distinct-values(\$node//@index))
+    let \$indexed := (\$tree//node[@index=\$indexs])
+    let \$begins := ((\$node | \$indexed)//@begin)
+    let \$beginlist := (distinct-values(\$begins))
+    let \$meta := (\$tree/metadata/meta)
+    ".($context?"
+    let \$prevs := (\$tree/preceding-sibling::alpino_ds[1]/sentence)
+    let \$nexts := (\$tree/following-sibling::alpino_ds[1]/sentence)":"")."
+    $variable_declarations
+
     return
-    for $sentence in (db:open("'.$component.'sentence2treebank")/sentence2treebank/sentence[@nr=$sentid])
-        let $tb := ($sentence/@part)';
-    } else {
-        $tree = 'let $tree := ($node/ancestor::alpino_ds)';
-        $sentence = 'let $sentence := ($tree/sentence)';
-    }
-    $sentid = 'let $sentid := ($tree/@id)';
-
-    $regulartb = $needRegularGrinded ? "let \$tb := '$database'" : '';
-    $returnTb = (isGrinded($corpus)) ? '||{data($tb)}' : '';
-
-    $meta = 'let $meta := ($tree/metadata/meta)';
-
-    $ids = 'let $ids := ($node//@id)';
-    $begins = 'let $indexs := (distinct-values($node//@index))
-    let $indexed := ($tree//node[@index=$indexs])
-    let $begins := (($node | $indexed)//@begin)';
-    $beginlist = 'let $beginlist := (distinct-values($begins))';
-    if (isGrinded($corpus) && !$needRegularGrinded) {
-        // should have only one slash when grinding
-        $xpath = '/'.preg_replace('/^\/+/', '', $xpath);
-    }
-    if ($context && !$needRegularGrinded) {
-        if (isGrinded($corpus)) {
-            $text = 'let $text := fn:replace($sentid[1], \'(.+?)(\d+)$\', \'$1\')';
-            $snr = 'let $snr := fn:replace($sentid[1], \'(.+?)(\d+)$\', \'$2\')';
-            $prev = 'let $prev := (number($snr)-1)';
-            $next = 'let $next := (number($snr)+1)';
-            $previd = 'let $previd := concat($text, $prev)';
-            $nextid = 'let $nextid := concat($text, $next)';
-
-            $prevs = 'let $prevs := root($sentence)/sentence2treebank/sentence[@nr=$previd]';
-            $nexts = 'let $nexts := root($sentence)/sentence2treebank/sentence[@nr=$nextid]';
-
-            $return = ' return <match>{data($sentid)}||{data($prevs)} <em>{data($sentence)}</em> {data($nexts)}'
-            .$returnTb.'||{string-join($ids, \'-\')}||{string-join($beginlist, \'-\')}||'.$variable_results.'</match>';
-
-            $xquery = $for.$xpath.PHP_EOL.$tree.$sentid.$sentence.$ids.$begins.$beginlist.$text.$snr.$prev.$next.$previd.$nextid.$prevs.$nexts.$variable_declarations.$return;
-        } else {
-            $context_sentences =
-'let $prevs := ($tree/preceding-sibling::alpino_ds[1]/sentence)
-let $nexts := ($tree/following-sibling::alpino_ds[1]/sentence)';
-            $return = ' return <match>{data($sentid)}||{data($prevs)} <em>{data($sentence)}</em> {data($nexts)}'.$returnTb
-                .'||{string-join($ids, \'-\')}||{string-join($beginlist, \'-\')}||{$node}||{$meta}||'.$variable_results.'</match>';
-            $xquery = $for.$xpath.PHP_EOL.$tree.$sentid.$sentence.$context_sentences.$regulartb.$ids.$begins.$beginlist.$meta.$variable_declarations.$return;
-        }
-    } else {
-        $return = ' return <match>{data($sentid)}||{data($sentence)}'.$returnTb
-            .'||{string-join($ids, \'-\')}||{string-join($beginlist, \'-\')}||{$node}||{$meta}||'.$variable_results.'</match>';
-        $xquery = $for.$xpath.PHP_EOL.$tree.$sentid.$sentence.$regulartb.$ids.$begins.$beginlist.$meta.$variable_declarations.$return;
+    <match>
+        {data(\$sentid)}
+        ||".($context?"
+        {data(\$prevs)} <em>{data(\$sentence)}</em> {data(\$nexts)}":"
+        {data(\$sentence)}")."
+        ||
+        $database
+        ||
+        {string-join(\$ids, '-')}
+        ||
+        {string-join(\$beginlist, '-')}
+        ||
+        {\$node}
+        ||
+        {\$meta}
+        ||
+        $variable_results
+    </match>";
     }
 
-    // Adds positioning values: limits possible output
-    $openPosition = '(';
-    $closePosition = ')[position() = '.($start+1).' to '.$end.']';
-    $xquery = $openPosition.$xquery.$closePosition;
-    return $xquery;
+    return "($query)[position() = ".($start+1)." to {$end}]";
 }
 
 function highlightSentence($sentence, $beginlist, $tag)
