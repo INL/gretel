@@ -43,6 +43,8 @@ function expandGrindDatabase($database, $session) {
  *
  * Retrieve all children from this database and mark it as visited.
  * Children already visited are not returned.
+ * NOTE: it is not verified all returned children actually exists, though this should usually be the case.
+ *
  * @param string $database
  * @param Session $session
  * @param string[] $visited
@@ -58,6 +60,7 @@ function expandGrindDatabaseAndVisit($database, $session, &$visited) {
  * Part of the GRIND-database resolving.
  *
  * NOTE: should only be called if shouldUseGrindedDatabases() returns true, or bogus databases may be returned.
+ * NOTE: it is not verified that all returned databases actually exist!
  *
  * @param string $component
  * @param string $bf the breadth-first pattern generated from xpathToBreadthFirst

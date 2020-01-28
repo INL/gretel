@@ -48,8 +48,18 @@ function getResults($xpath, $context, $corpus, $components, $databases, $visited
         // Now search all (remaining?) databases in this component
         while (!empty($databases)) {
             $database = array_pop($databases);
+            if ($session->query("db:exists('$database')")->execute() == 'false') {
+                $start = 0;
+                continue;
+            }
+
             if ($isGrindedSearch && !array_key_exists($database, $visitedDatabases)) {
-                $databases = array_merge($databases, expandGrindDatabaseAndVisit($database, $session, $visitedDatabases));
+                // NOTE; entry point databases are usually the largest, and will usually yield results
+                // so search those first
+                // since we always search the last database in the array (we pop it)
+                // this means all small child databases should be put at the front of the array
+                // so merge in reverse order so we keep the large ones at the end and thus search them first
+                $databases = array_merge(expandGrindDatabaseAndVisit($database, $session, $visitedDatabases), $databases);
             }
 
             $result = getSentences($isGrindedSearch, $corpus, $component, $database, $start, $session, $searchLimit, $xpath, $context, $variables);
