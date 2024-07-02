@@ -1,0 +1,20 @@
+# can't use alpine as it doesn't have bash
+FROM eclipse-temurin:21
+
+EXPOSE 1984
+
+RUN apt-get update && apt-get install -y wget unzip
+
+WORKDIR /basex
+
+RUN wget https://files.basex.org/releases/11.0/BaseX110.zip
+RUN unzip BaseX110.zip
+RUN rm BaseX110.zip
+RUN mv basex/* . && mv basex/.basexhome . && rmdir basex
+
+# symlink data dir to volume
+RUN rm -rf data
+RUN ln -s /data data
+
+CMD bin/basexserver
+

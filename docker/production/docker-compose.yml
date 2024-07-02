@@ -1,0 +1,38 @@
+version: "3"
+
+services:
+  backend:
+    build: 
+      context: ../..
+      dockerfile: docker/production/Dockerfile.backend
+    image: gretel-backend
+    environment: 
+      REDIS_HOST: redis
+      BASEX_HOST: basex
+      ALPINO_HOST: alpino
+
+  alpino:
+    image: registry.webhosting.rug.nl/compling/alpino:latest
+    environment:
+      - PROLOGMAXSIZE=1500M
+    ports:
+      - 7001
+    command: Alpino -notk -veryfast user_max=600000 server_kind=parse server_port=7001 assume_input_is_tokenized=on debug=0 end_hook=xml -init_dict_p batch_command=alpino_server
+    
+  redis:
+    image: redis:7-alpine
+    ports:
+      - 6379
+    # todo perhaps something with persistence.
+
+  basex: 
+    build: 
+      context: .
+      dockerfile: Dockerfile.basex
+    ports: 
+      - 1984
+    # volumes: 
+    #   - basex-data:/data
+
+
+

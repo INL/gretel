@@ -1,0 +1,28 @@
+# buster is the debian version, pin it so that the image is reproducible
+FROM python:3.11-buster 
+
+WORKDIR /app
+
+RUN pip install pip-tools
+COPY backend/requirements.in backend/requirements.in
+
+RUN pip-compile backend/requirements.in --output-file backend/requirements.txt
+RUN pip-sync backend/requirements.txt
+
+COPY backend backend
+
+
+# RUN apt-get update && apt-get install -y pip-tools
+
+# COPY backend/requirements.in backend/requirements.in
+
+# RUN pip-compile backend/requirements.in
+# RUN pip install -r backend/requirements.txt
+
+# COPY backend backend
+
+CMD tail -f /dev/null
+
+
+
+
