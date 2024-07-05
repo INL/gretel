@@ -35,10 +35,6 @@ export class AlpinoService {
         };
     }
 
-    async parseSentenceUrl(sentence: string) {
-        return this.configurationService.getAlpinoUrl('parse_sentence/' + this.escapeSlash(this.tokenize(sentence)));
-    }
-
     async parseSentence(sentence: string) {
         const response = await this.http.post<ApiParseResult>(
             await this.configurationService.getDjangoUrl('parse/parse-sentence/'),

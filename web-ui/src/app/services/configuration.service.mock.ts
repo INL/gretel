@@ -20,10 +20,6 @@ export class ConfigurationServiceMock implements ConfigurationServiceInterface {
         return 'test-provider';
     }
 
-    public async getAlpinoUrl(): Promise<string> {
-        return '';
-    }
-
     async getDjangoUrl(path: string) {
         return '/' + path;
     }

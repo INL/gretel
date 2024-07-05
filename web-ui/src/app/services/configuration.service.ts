@@ -34,10 +34,6 @@ export class ConfigurationService {
         return (await this.config).uploadProvider;
     }
 
-    async getAlpinoUrl(path: string) {
-        return (await this.config).alpino + path;
-    }
-
     async getDjangoUrl(path: string) {
         return (await this.config).django + path;
     }
