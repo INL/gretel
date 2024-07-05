@@ -1,0 +1,58 @@
+version: "3"
+
+services:
+
+  frontend: 
+    container_name: gretel-frontend
+    image: gretel-frontend
+    build: 
+      context: ../..
+      dockerfile: docker/production/Dockerfile
+      target: frontend
+    ports: 
+      - 80:80
+
+  backend:
+    container_name: gretel-backend
+    image: gretel-backend
+    build: 
+      context: ../..
+      dockerfile: docker/production/Dockerfile
+      target: backend
+  
+    environment: 
+      REDIS_HOST: redis
+      BASEX_HOST: basex
+      ALPINO_HOST: alpino
+    ports: 
+      - 5678:5678
+      - 8000:8000
+
+  alpino:
+    container_name: gretel-alpino
+    image: registry.webhosting.rug.nl/compling/alpino:latest
+    environment:
+      - PROLOGMAXSIZE=1500M
+    ports:
+      - 7001:7001
+    command: Alpino -notk -veryfast user_max=600000 server_kind=parse server_port=7001 assume_input_is_tokenized=on debug=0 end_hook=xml -init_dict_p batch_command=alpino_server
+    
+  redis:
+    container_name: gretel-redis
+    image: redis:7-alpine
+    ports:
+      - 6379:6379
+    # todo perhaps something with persistence.
+
+  basex: 
+    container_name: gretel-basex
+    build: 
+      context: ../..
+      dockerfile: docker/production/Dockerfile.basex
+    # ports: 
+    #   - 1984
+    # volumes: 
+    #   - basex-data:/data
+
+
+
