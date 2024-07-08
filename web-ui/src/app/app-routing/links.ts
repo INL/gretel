@@ -29,6 +29,11 @@ const links: Link[] = [
         proxy: false,
     },
     {
+        name: 'Upload',
+        link: '/upload',
+        proxy: false,
+    },
+    {
         name: 'About',
         link: '/about',
         proxy: false,
@@ -38,20 +43,7 @@ const links: Link[] = [
         link: '/documentation',
         proxy: false,
     },
-
-
-
-];
-const mainLinksName = [
-    'Home',
-    'Example-based Search',
-    'XPath Search',
-    'Multiword Expressions',
-    'About',
-    'Documentation'
 ];
 
-const mainLinks: Link[] = links.filter(route => mainLinksName.includes(route.name));
 
-
-export { Link, links, mainLinks };
+export { Link, links };
