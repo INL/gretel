@@ -35,7 +35,7 @@ RUN apk add git
 COPY package.json package.json
 COPY web-ui/package.json web-ui/package.json
 
-RUN yarn fyarn install
+RUN --mount=type=cache,target=/root/.yarn YARN_CACHE_FOLDER=/root/.yarn yarn fyarn install
 
 COPY web-ui web-ui
 
