@@ -13,6 +13,8 @@ services:
       - 80:80
 
   backend:
+    profiles: 
+      - production
     container_name: gretel-backend
     image: gretel-backend
     build: 
@@ -27,6 +29,26 @@ services:
     ports: 
       - 5678:5678
       - 8000:8000
+
+  backend-live:
+    profiles: 
+      - live
+    container_name: gretel-backend
+    image: gretel-backend
+    build: 
+      context: ../..
+      dockerfile: docker/production/Dockerfile
+      target: backend
+  
+    environment: 
+      REDIS_HOST: redis
+      BASEX_HOST: basex
+      ALPINO_HOST: alpino
+    ports: 
+      - 5678:5678
+      - 8000:8000
+    volumes: 
+      - ../../backend:/app/backend
 
   alpino:
     container_name: gretel-alpino

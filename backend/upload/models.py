@@ -327,3 +327,12 @@ class TreebankUpload(models.Model):
             total_processed_files += files_processed
         treebank.metadata = self.get_metadata()
         treebank.save()
+
+
+class Contact(models.Model):
+    name = models.CharField(max_length=100)
+    email = models.EmailField()
+    message = models.TextField()
+
+    def __str__(self):
+        return self.name
