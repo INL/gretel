@@ -64,66 +64,70 @@ export class UserService {
      * Retrieve the current user or set it to undefined
      */
     private async retrieveCurrent(): Promise<boolean> {
-        const currentUrl = await this.configurationService.getUploadApiUrl('user');
+        return false;
+        // const currentUrl = await this.configurationService.getUploadApiUrl('user');
 
-        let response: UserResponse = await this.http.get(currentUrl, { withCredentials: true }).toPromise()
-            .catch((error: HttpErrorResponse) => null);
+        // let response: UserResponse = await this.http.get(currentUrl, { withCredentials: true }).toPromise()
+        //     .catch((error: HttpErrorResponse) => null);
 
-        if (response) {
-            this._canLogIn$.next(true);
+        // if (response) {
+        //     this._canLogIn$.next(true);
 
-            if (!response.logged_in && response['id']) {
-                // not set on server
-                response.logged_in = true;
-            }
-        }
+        //     if (!response.logged_in && response['id']) {
+        //         // not set on server
+        //         response.logged_in = true;
+        //     }
+        // }
 
-        return this.setUser(response);
+        // return this.setUser(response);
     }
 
     /**
      * Logs the user in, returns true if successful
      */
     async login(username: string, password: string): Promise<boolean> {
-        const loginUrl = await this.configurationService.getUploadApiUrl('user/login');
+        return false;
+        // const loginUrl = await this.configurationService.getUploadApiUrl('user/login');
 
-        const formData = new FormData();
-        formData.append('username', username);
-        formData.append('password', password);
+        // const formData = new FormData();
+        // formData.append('username', username);
+        // formData.append('password', password);
 
-        const response = <UserResponse>await this.http.post(
-            loginUrl,
-            formData,
-            { withCredentials: true }).toPromise();
+        // const response = <UserResponse>await this.http.post(
+        //     loginUrl,
+        //     formData,
+        //     { withCredentials: true }).toPromise();
 
-        var success = this.setUser(response);
-        if (success) {
-            if (!this.retrieveCurrent()) {
-                this.notificationService.add('Your credentials are correct, but login failed anyway. Might be a cross-domain issue with session cookies.', 'error');
-            }
-        }
+        // var success = this.setUser(response);
+        // if (success) {
+        //     if (!this.retrieveCurrent()) {
+        //         this.notificationService.add('Your credentials are correct, but login failed anyway. Might be a cross-domain issue with session cookies.', 'error');
+        //     }
+        // }
 
-        return success;
+        // return success;
     }
 
     /**
      * Logs the user out, returns true if successful
      */
     async logout(): Promise<boolean> {
-        const logoutUrl = await this.configurationService.getUploadApiUrl('user/logout');
+        return true;
+        // const logoutUrl = await this.configurationService.getUploadApiUrl('user/logout');
 
-        try {
-            await this.http.post(logoutUrl, null, { withCredentials: true }).toPromise();
-            this.setUser(undefined);
-            return true;
-        }
-        catch (error) {
-            console.error(error);
-        }
+        // try {
+        //     await this.http.post(logoutUrl, null, { withCredentials: true }).toPromise();
+        //     this.setUser(undefined);
+        //     return true;
+        // }
+        // catch (error) {
+        //     console.error(error);
+        // }
 
-        return false;
+        // return false;
     }
 
+    /** Update the current user and return a boolean indicating whether a user is now logged in (or not). */
     private setUser(response: UserResponse): boolean {
         if (!this._user$) {
             this._user$ = new BehaviorSubject<User>(undefined);
