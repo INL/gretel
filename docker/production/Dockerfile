@@ -3,23 +3,28 @@ FROM python:3.11-buster as backend
 
 WORKDIR /app
 
-RUN pip install pip-tools
+# Copy requirements.in, expand then, and install the dependencies.
+RUN python -m pip install pip-tools
+
+
+
 COPY backend/requirements.in backend/requirements.in
-
 RUN pip-compile backend/requirements.in --output-file backend/requirements.txt
-RUN pip-sync backend/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip-sync backend/requirements.txt
 
+# Copy the backend code.
 COPY backend backend
-
-RUN pip install debugpy
-
 WORKDIR /app/backend
-
 RUN python manage.py migrate
 
-# --wait-for-client
-CMD python -Xfrozen_modules=off -m debugpy  --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --pythonpath ..
+# Debug mode.
+RUN python -m pip install debugpy
 
+# CMD python -Xfrozen_modules=off -m debugpy --wait-for-client --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --pythonpath ..
+CMD python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --pythonpath ..
+
+# Regular mode.
 # CMD python manage.py runserver
 # CMD tail -f /dev/null
 

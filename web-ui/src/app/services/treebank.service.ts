@@ -61,16 +61,6 @@ export interface ConfiguredTreebanksResponse {
     };
 }
 
-export interface UploadedTreebankResponse {
-    email: string;
-    id: string;
-    processed: string;
-    public: '1' | '0';
-    title: string;
-    uploaded: string;
-    user_id: string;
-}
-
 export interface DjangoTreebankResponse {
     slug: string;
     title: string;

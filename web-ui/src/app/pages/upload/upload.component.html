@@ -1,3 +1,24 @@
 <div class="content">
-    TODO
+    <form (ngSubmit)="upload()">
+        <label><input type="text" [(ngModel)]="treebankName"> Treebank Name</label>
+        
+        <label><input type="file" name="file" (change)="selectFile($event)"> File</label><br>
+        <label><select name="input_format" [(ngModel)]="format">
+            <option value="">Detect automatically</option>
+            <option value="A">Alpino</option>
+            <option value="C">CHAT</option>
+            <option value="T">Plaintext</option>
+            <option value="F">FoLiA</option>
+        </select></label><br>
+
+        <label><input type="checkbox" [(ngModel)]="sentenceTokenized" name="sentence_tokenized"> Sentence Tokenized</label><br>
+        <label><input type="checkbox" [(ngModel)]="wordTokenized" name="word_tokenized"> Word Tokenized</label><br>
+        <label><input type="checkbox" [(ngModel)]="sentencesLabeled" name="sentences_have_labels"> Sentences Have Labels</label><br>
+        <label><input type="checkbox" [(ngModel)]="isPublic" name="public"> Public</label><br>
+
+        <button [disabled]="isUploading" type="submit">Go!</button><br>
+    </form>
+    
+    <p-progressBar *ngIf="isUploading" [value]="uploadProgress"></p-progressBar>
+    <div *ngIf="warning" class="notification is-danger break-word">{{warning}}</div>
 </div>

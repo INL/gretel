@@ -1,141 +1,98 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { BehaviorSubject } from 'rxjs';
+import { HttpClient, HttpErrorResponse, HttpEvent, HttpEventType, HttpRequest } from '@angular/common/http';
+import { catchError, map, Observable, ReplaySubject, throwError } from 'rxjs';
 import { ConfigurationService } from './configuration.service';
 import { NotificationService } from './notification.service';
 
-type UserResponseSuccess = {
-    id: string;
-    logged_in: true;
-    username: string;
+export class UploadStreamEvent {
+    constructor(
+        public message: string,
+        public progress: number,
+    ) {}
 }
 
-type UserResponseFailure = {
-    logged_in: false
+export class UploadStreamError {
+    constructor(public message: string) {}
 }
 
-type UserResponse = UserResponseSuccess | UserResponseFailure;
-
-class InternalUser {
-    id: number;
-    displayName: string;
-    username: string;
-
-    constructor(response: UserResponseSuccess) {
-        this.id = parseInt(response.id);
-        this.displayName = response.username;
-        this.username = response.username;
-    }
-};
-
-
-export type User = {
-    [key in keyof InternalUser]: InternalUser[key]
+// TODO sync with server.
+type UploadResponse = {
+    
 }
-
 
 @Injectable({
     providedIn: 'root'
 })
-export class UserService {
-    private _user$: BehaviorSubject<User>;
-    private _canLogIn$ = new BehaviorSubject<boolean>(false);
-
+export class UploadService {
     constructor(
         private http: HttpClient,
         private configurationService: ConfigurationService,
-        private notificationService: NotificationService) { }
+        private notificationService: NotificationService
+    ) { }
 
-    public get user$() {
-        if (this._user$) {
-            return this._user$.asObservable();
+    private handleProgressForFile(file: File): (event: HttpEvent<{test:''}>) => UploadStreamEvent {
+        return (event: HttpEvent<{test:''}>) => {
+            switch (event.type) {
+                case HttpEventType.Sent:
+                    return new UploadStreamEvent(`Uploading file "${file.name}" of size ${file.size}.`, 0);
+                case HttpEventType.UploadProgress:
+                    const percentDone = event.total ? Math.round(100 * event.loaded / event.total) : 0;
+                    return new UploadStreamEvent(`File "${file.name}" is ${percentDone}% uploaded.`, percentDone);
+                case HttpEventType.Response:
+                    return new UploadStreamEvent(`File "${file.name}" was completely uploaded!`, 100);
+                default:
+                    return new UploadStreamEvent('', -1);
+            }
         }
-
-        this._user$ = new BehaviorSubject<User>(undefined);
-        this.retrieveCurrent();
-        return this._user$;
     }
 
-    public get canLogin$() {
-        return this._canLogIn$.asObservable();
-    }
-
-    /**
-     * Retrieve the current user or set it to undefined
-     */
-    private async retrieveCurrent(): Promise<boolean> {
-        return false;
-        // const currentUrl = await this.configurationService.getUploadApiUrl('user');
-
-        // let response: UserResponse = await this.http.get(currentUrl, { withCredentials: true }).toPromise()
-        //     .catch((error: HttpErrorResponse) => null);
-
-        // if (response) {
-        //     this._canLogIn$.next(true);
-
-        //     if (!response.logged_in && response['id']) {
-        //         // not set on server
-        //         response.logged_in = true;
-        //     }
-        // }
-
-        // return this.setUser(response);
+    private handleError(error: HttpErrorResponse): Observable<UploadStreamError> {
+        if (error.status === 0) {
+            // A client-side or network error occurred. Handle it accordingly.
+            return throwError(() => new UploadStreamError('Failed to communicate with server; please try again later.'));
+        } else {
+            const r: {message: string} = error.error;
+            // The backend returned an unsuccessful response code.
+            // error.error contains the response body.
+            // TODO should probably expose more info.
+            return throwError(() => new UploadStreamError(`Failed to upload or parse file: ${r.message}`));
+        }
     }
 
     /**
      * Logs the user in, returns true if successful
      */
-    async login(username: string, password: string): Promise<boolean> {
-        return false;
-        // const loginUrl = await this.configurationService.getUploadApiUrl('user/login');
+    upload(params: {
+        treebankName: string,
+        file: File,
+        format: string,
+        sentenceTokenized?: boolean,
+        wordTokenized?: boolean,
+        sentencesLabeled?: boolean,
+        isPublic?: boolean,
+    }): Observable<UploadStreamEvent>  {
+        const formData = new FormData();
+        formData.set('input_file', params.file);
+        formData.set('input_format', params.format);
+        formData.set('public', params.isPublic ? 'true' : 'false');
+        formData.set('sentence_tokenized', params.sentenceTokenized ? 'true' : 'false');
+        formData.set('word_tokenized', params.wordTokenized ? 'true' : 'false');
+        formData.set('sentences_have_labels', params.sentencesLabeled ? 'true' : 'false');
+        
+        const upload$ = new ReplaySubject<UploadStreamEvent>();
 
-        // const formData = new FormData();
-        // formData.append('username', username);
-        // formData.append('password', password);
-
-        // const response = <UserResponse>await this.http.post(
-        //     loginUrl,
-        //     formData,
-        //     { withCredentials: true }).toPromise();
-
-        // var success = this.setUser(response);
-        // if (success) {
-        //     if (!this.retrieveCurrent()) {
-        //         this.notificationService.add('Your credentials are correct, but login failed anyway. Might be a cross-domain issue with session cookies.', 'error');
-        //     }
-        // }
-
-        // return success;
-    }
-
-    /**
-     * Logs the user out, returns true if successful
-     */
-    async logout(): Promise<boolean> {
-        return true;
-        // const logoutUrl = await this.configurationService.getUploadApiUrl('user/logout');
-
-        // try {
-        //     await this.http.post(logoutUrl, null, { withCredentials: true }).toPromise();
-        //     this.setUser(undefined);
-        //     return true;
-        // }
-        // catch (error) {
-        //     console.error(error);
-        // }
-
-        // return false;
-    }
-
-    /** Update the current user and return a boolean indicating whether a user is now logged in (or not). */
-    private setUser(response: UserResponse): boolean {
-        if (!this._user$) {
-            this._user$ = new BehaviorSubject<User>(undefined);
-        }
-
-        const user = response?.logged_in ? new InternalUser(response) : undefined;
-        this._user$.next(user);
-
-        return response?.logged_in ?? false;
+        this.configurationService.getDjangoUrl(`upload/${params.treebankName}/`)
+        .then(url => new HttpRequest('POST', url, formData, {
+            withCredentials: true,
+            reportProgress: true
+        }))
+        .then(s => this.http.request(s)
+            .pipe(
+                map(this.handleProgressForFile(params.file)),
+                catchError(this.handleError)
+            )
+            .subscribe(upload$)
+        )
+        return upload$;
     }
 }

@@ -1,58 +1,37 @@
+from django.http import HttpRequest
 from rest_framework.response import Response
 from rest_framework.decorators import (
     api_view, parser_classes, renderer_classes, authentication_classes
 )
-from rest_framework.parsers import JSONParser
+from rest_framework.request import Request
+
+from rest_framework.parsers import MultiPartParser
 from rest_framework.renderers import JSONRenderer, BrowsableAPIRenderer
 from rest_framework.authentication import BasicAuthentication
 from rest_framework import status
 
 from lxml import etree
 from alpino_query import AlpinoQuery
+from yaml import serialize
 
 from services.alpino import alpino, AlpinoError
+from upload.models import TreebankUpload
+from upload.serializers import TreebankUploadSerializer
 
 
 
 @api_view(['POST'])
 @authentication_classes([BasicAuthentication])
 @renderer_classes([JSONRenderer, BrowsableAPIRenderer])
-@parser_classes([JSONParser])
-def upload_view(request, treebank):
-    data = request.data
-    try:
-        # TODO perhaps use a schema for this...
-        xml = data['xml']
-        tokens = data['tokens']
-        attributes = data['attributes']
-        ignore_top_node = data['ignoreTopNode']
-        respect_order = data['respectOrder']
-    except KeyError as err:
-        return Response(
-            {'error': '{} is missing'.format(err)},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+@parser_classes([MultiPartParser])
+def upload_view(request: Request, treebank: str):
+	request.data['treebank'] = treebank
 
-    if ignore_top_node:
-        remove = ['rel', 'cat']
-    else:
-        remove = ['rel']
-    try:
-        query = AlpinoQuery()
-        query.mark(xml, tokens, attributes)
-        marked_tree = query.marked_xml
-        query.generate_subtree([remove])
-        sub_tree = query.subtree_xml
-        xpath = query.generate_xpath(respect_order)
-    except etree.XMLSyntaxError as err:
-        return Response(
-            {'error': 'syntax error in input XML: {}'.format(err)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-    response = {
-        'xpath': xpath,
-        'markedTree': marked_tree,
-        'subTree': sub_tree
-    }
-    return Response(response)
+	serializer = TreebankUploadSerializer(data=request.data, context={'request': request})
+	serializer.is_valid(raise_exception=True)
+	serializer.save()
+	
+	return Response(
+		serializer.data,
+		status=status.HTTP_201_CREATED
+	)	

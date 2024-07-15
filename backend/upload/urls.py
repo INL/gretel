@@ -1,8 +1,8 @@
 from django.urls import include, path
 from .views import (
-    ContactCreateView
+    upload_view
 )
 
 urlpatterns = [
-    path('/<slug:treebank>', ContactCreateView),
+    path('<slug:treebank>/', upload_view, name="upload"),
 ]

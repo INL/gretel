@@ -1,8 +1,12 @@
+import os
 from pathlib import Path
 import re
+import patoolib
 from lxml import etree
 import logging
 
+
+from django.conf import settings
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils.text import slugify
@@ -11,6 +15,8 @@ from corpus2alpino.converter import Converter
 from corpus2alpino.collectors.filesystem import FilesystemCollector
 from corpus2alpino.targets.memory import MemoryTarget
 from corpus2alpino.writers.lassy import LassyWriter
+
+# from file_validator.models import DjangoFileValidator
 
 from treebanks.models import Treebank, Component, BaseXDB
 from services.alpino import alpino, AlpinoError
@@ -23,7 +29,6 @@ MAXIMUM_DATABASE_SIZE = 1024 * 1024 * 10  # 10 MiB
 
 class UploadError(RuntimeError):
     pass
-
 
 class TreebankUpload(models.Model):
     '''Class to upload texts of various input formats to GrETEL. The model
@@ -39,15 +44,23 @@ class TreebankUpload(models.Model):
         CHAT = 'C', 'CHAT'
         TXT = 'T', 'plain text'
         FOLIA = 'F', 'FoLiA'
+        AUTO = '', 'auto-detect'
     MAX_METADATA_OPTIONS = 20
 
     treebank = models.OneToOneField(Treebank, on_delete=models.SET_NULL,
                                     null=True)
     input_file = models.FileField(upload_to='uploaded_treebanks/', blank=True)
+    # , validators=[DjangoFileValidator(
+    #     # todo: allow zip, xml, plaintext, folia, chat, alpino?
+    #     # libraries=['python_magic', 'filetype'],
+    #     # acceptable_types=['audio', 'video', 'image'], # => The types you want the file to be checked based on.
+    #     # max_upload_file_size= int(os.getenv('MAX_UPLOAD_FILE_SIZE', str(500 * 1024 * 1024)))
+    # )])
     input_dir = models.CharField(max_length=255, blank=True)
-    input_format = models.CharField(max_length=2, choices=InputFormat.choices)
+    input_format = models.CharField(max_length=2, choices=InputFormat.choices[0:])
     upload_timestamp = models.DateTimeField(
-        verbose_name='Upload date and time', null=True, blank=True
+        verbose_name='Upload date and time', null=True, blank=True,
+        auto_now=True
     )
     uploaded_by = models.ForeignKey(User, null=True, blank=True,
                                     on_delete=models.SET_NULL)
@@ -142,11 +155,20 @@ class TreebankUpload(models.Model):
         return None
 
     def _unpack(self):
-        '''Unpack compressed input file and set input_dir.
-        TODO: not yet implemented.'''
+        '''Unpack compressed input file and set input_dir.'''
         if not self.input_file:
             raise UploadError('Need input_file to unpack')
-        raise UploadError('Unpacking not yet implemented')
+        
+        temp_dir = os.path.join(settings.MEDIA_ROOT, 'temp')
+        os.makedirs(temp_dir, exist_ok=True)
+
+        try:
+            # Extract the archive to the temporary directory
+            patoolib.extract_archive(self.input_file.file.temporary_file_path(), outdir=temp_dir, interactive=False)
+            self.input_dir = temp_dir
+        except: 
+            raise UploadError('Error unpacking file. Is it a valid archive?')
+
 
     def _add_file(self, path: Path, component: str):
         '''Include the file if it is of a supported format and if no
@@ -327,6 +349,13 @@ class TreebankUpload(models.Model):
             total_processed_files += files_processed
         treebank.metadata = self.get_metadata()
         treebank.save()
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self.prepare()
+        self.process()
+        super().save()
+
 
 
 class Contact(models.Model):

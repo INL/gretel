@@ -15,6 +15,7 @@ services:
   backend:
     profiles: 
       - production
+      - '' # default profile (i.e. no profile set.)
     container_name: gretel-backend
     image: gretel-backend
     build: 
@@ -32,7 +33,7 @@ services:
 
   backend-live:
     profiles: 
-      - live
+      - dev
     container_name: gretel-backend
     image: gretel-backend
     build: 
@@ -62,8 +63,8 @@ services:
   redis:
     container_name: gretel-redis
     image: redis:7-alpine
-    ports:
-      - 6379:6379
+    # ports:
+    #   - 6379:6379
     # todo perhaps something with persistence.
 
   basex: 
