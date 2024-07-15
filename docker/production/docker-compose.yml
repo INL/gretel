@@ -4,7 +4,7 @@ services:
 
   frontend: 
     container_name: gretel-frontend
-    image: gretel-frontend
+    image: instituutnederlandsetaal/gretel5-frontend
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile
@@ -17,7 +17,7 @@ services:
       - production
       - '' # default profile (i.e. no profile set.)
     container_name: gretel-backend
-    image: gretel-backend
+    image: instituutnederlandsetaal/gretel5-backend
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile
@@ -35,7 +35,7 @@ services:
     profiles: 
       - dev
     container_name: gretel-backend
-    image: gretel-backend
+    image: instituutnederlandsetaal/gretel5-backend
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile
@@ -69,6 +69,7 @@ services:
 
   basex: 
     container_name: gretel-basex
+    image: instituutnederlandsetaal/gretel5-basex
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile.basex
