@@ -9,6 +9,8 @@ class TreebankUploadSerializer(serializers.ModelSerializer):
     class Meta: 
         model = TreebankUpload
         fields = [
+            'name',
+
             'input_file', 
             'input_format',
 

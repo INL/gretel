@@ -17,7 +17,7 @@ from upload.serializers import TreebankUploadSerializer
 @renderer_classes([JSONRenderer, BrowsableAPIRenderer])
 @parser_classes([MultiPartParser])
 def upload_view(request: Request, treebank: str):
-	request.data['treebank'] = treebank
+	request.data['name'] = treebank
 
 	serializer = TreebankUploadSerializer(data=request.data, context={'request': request})
 	serializer.is_valid(raise_exception=True)

@@ -48,6 +48,8 @@ class TreebankUpload(models.Model):
         AUTO = '', 'auto-detect'
     MAX_METADATA_OPTIONS = 20
 
+    name = models.CharField(max_length=255, blank=True)
+    '''Name the treebank should have'''
     treebank = models.OneToOneField(Treebank, on_delete=models.SET_NULL,null=True)
     '''Initialized later.'''
     input_file = models.FileField(upload_to='uploaded_treebanks/', blank=True)
@@ -295,7 +297,14 @@ class TreebankUpload(models.Model):
         if not self.input_dir or not hasattr(self, 'components'):
             raise UploadError('prepare() has to be called first')
 
-        treebankslug = slugify(Path(self.input_dir).name)
+        if (self.name):
+            treebankslug = slugify(self.name)
+        elif (self.input_file):
+            treebankslug = slugify(self.input_file.name)
+        elif (self.input_dir):
+            treebankslug = slugify(Path(self.input_dir).name)
+        else:
+            raise UploadError('No name or input file or directory provided')
 
         # Check if treebank already exists
         if Treebank.objects.filter(slug=treebankslug).exists():
