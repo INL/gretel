@@ -28,11 +28,3 @@ class TreebankUploadSerializer(serializers.ModelSerializer):
         else: 
             print("No request found when getting user from upload serializer")
             return None
-        
-
-    def create(self, validated_data):
-        instance = TreebankUpload(**validated_data)
-        instance.prepare()
-        instance.process()
-
-        return instance

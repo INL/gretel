@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import tempfile
 import re
 import patoolib
 from lxml import etree
@@ -47,9 +48,11 @@ class TreebankUpload(models.Model):
         AUTO = '', 'auto-detect'
     MAX_METADATA_OPTIONS = 20
 
-    treebank = models.OneToOneField(Treebank, on_delete=models.SET_NULL,
-                                    null=True)
+    treebank = models.OneToOneField(Treebank, on_delete=models.SET_NULL,null=True)
+    '''Initialized later.'''
     input_file = models.FileField(upload_to='uploaded_treebanks/', blank=True)
+    temporary_unpack_directory: tempfile.TemporaryDirectory = None
+
     # , validators=[DjangoFileValidator(
     #     # todo: allow zip, xml, plaintext, folia, chat, alpino?
     #     # libraries=['python_magic', 'filetype'],
@@ -148,9 +151,9 @@ class TreebankUpload(models.Model):
             with open(filename, 'r') as f:
                 firstline = f.readline()
                 secondline = f.readline()
-                if firstline.startswith('<FoLiA'):
+                if ('<FoLiA' in firstline) or ('<FoLiA' in secondline):
                     return self.InputFormat.FOLIA
-                elif secondline.startswith('<alpino_ds'):
+                elif ('<alpino_ds' in firstline) or ('<alpino_ds' in secondline):
                     return self.InputFormat.ALPINO
         return None
 
@@ -159,13 +162,11 @@ class TreebankUpload(models.Model):
         if not self.input_file:
             raise UploadError('Need input_file to unpack')
         
-        temp_dir = os.path.join(settings.MEDIA_ROOT, 'temp')
-        os.makedirs(temp_dir, exist_ok=True)
-
+        self.temporary_unpack_directory = tempfile.TemporaryDirectory()
         try:
             # Extract the archive to the temporary directory
-            patoolib.extract_archive(self.input_file.file.temporary_file_path(), outdir=temp_dir, interactive=False)
-            self.input_dir = temp_dir
+            patoolib.extract_archive(self.input_file.file.temporary_file_path(), outdir=self.temporary_unpack_directory.name, interactive=False)
+            self.input_dir = self.temporary_unpack_directory.name
         except: 
             raise UploadError('Error unpacking file. Is it a valid archive?')
 
@@ -350,12 +351,11 @@ class TreebankUpload(models.Model):
         treebank.metadata = self.get_metadata()
         treebank.save()
 
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        self.prepare()
-        self.process()
-        super().save()
-
+    def cleanup(self):
+        if not self.temporary_unpack_directory is None:
+            self.temporary_unpack_directory.cleanup()
+        if not self.input_file is None:
+            self.input_file.delete()
 
 
 class Contact(models.Model):
