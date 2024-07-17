@@ -30,7 +30,7 @@ const links: Link[] = [
     },
     {
         name: 'Upload',
-        link: '/upload',
+        link: '/upload-treebank',
         proxy: false,
     },
     {

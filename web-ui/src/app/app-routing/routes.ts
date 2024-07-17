@@ -13,7 +13,8 @@ import { ExampleBasedSearchComponent } from '../pages/example-based-search/examp
 import { ExternalTreeVisualizerComponent } from '../components/tree-visualizer/external-tree-visualizer.component';
 import { UploadComponent } from '../pages/upload/upload.component';
 
-
+// Take care these routes do not conflict with the django Api routes.
+// As both are mounted on '/'.
 const routes: Routes = [
     {
         path: 'home',
@@ -44,7 +45,7 @@ const routes: Routes = [
         component: ExternalTreeVisualizerComponent,
     },
     {
-        path: 'upload',
+        path: 'upload-treebank',
         component: UploadComponent,
     },
     {
