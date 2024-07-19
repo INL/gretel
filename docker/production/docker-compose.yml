@@ -15,7 +15,7 @@ services:
   backend:
     profiles: 
       - production
-      - '' # default profile (i.e. no profile set.)
+      - prod
     container_name: gretel-backend
     image: instituutnederlandsetaal/gretel5-backend
     build: 
@@ -33,6 +33,7 @@ services:
 
   backend-live:
     profiles: 
+      - development
       - dev
     container_name: gretel-backend
     image: instituutnederlandsetaal/gretel5-backend
@@ -50,6 +51,11 @@ services:
       - 8000:8000
     volumes: 
       - ../../backend:/app/backend
+    # need to run migrations (which inits db) because we overwrite the database file with the volume.
+    command: bash -c "
+      python manage.py migrate &&
+      python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --pythonpath ..
+      "
 
   alpino:
     container_name: gretel-alpino
