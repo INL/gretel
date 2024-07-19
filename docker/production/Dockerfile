@@ -3,6 +3,9 @@ FROM python:3.11-buster as backend
 
 WORKDIR /app
 
+RUN apt update
+RUN apt install unar -y
+
 # Copy requirements.in, expand then, and install the dependencies.
 RUN python -m pip install pip-tools
 
