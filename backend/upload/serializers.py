@@ -1,6 +1,6 @@
 # serializers.py
 from rest_framework import serializers
-from .models import Contact, TreebankUpload
+from .models import TreebankUpload
 
 class TreebankUploadSerializer(serializers.ModelSerializer):
     

@@ -1,3 +1,4 @@
+
 import os
 from pathlib import Path
 import tempfile
@@ -5,7 +6,6 @@ import re
 import patoolib
 from lxml import etree
 import logging
-
 
 from django.conf import settings
 from django.db import models
@@ -16,12 +16,14 @@ from corpus2alpino.converter import Converter
 from corpus2alpino.collectors.filesystem import FilesystemCollector
 from corpus2alpino.targets.memory import MemoryTarget
 from corpus2alpino.writers.lassy import LassyWriter
-
-# from file_validator.models import DjangoFileValidator
+from corpus2alpino.readers.auto import AutoReader
 
 from treebanks.models import Treebank, Component, BaseXDB
 from services.alpino import alpino, AlpinoError
 from services.basex import basex
+
+# lxml instead of etree because we need proper xpath
+import lxml.etree as ET
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,9 @@ MAXIMUM_DATABASE_SIZE = 1024 * 1024 * 10  # 10 MiB
 
 
 class UploadError(RuntimeError):
+    pass
+
+class TreebankExistsError(RuntimeError):
     pass
 
 class TreebankUpload(models.Model):
@@ -49,7 +54,11 @@ class TreebankUpload(models.Model):
     MAX_METADATA_OPTIONS = 20
 
     name = models.CharField(max_length=255, blank=True)
-    '''Name the treebank should have'''
+    '''Name the treebank should have. This will be validated and potentially normalized in prepare()'''
+    title = models.CharField(max_length=255, blank=True)
+    '''Display name of the treebank. This is the name that will be shown in the UI. If unset, will default to name.'''
+    description = models.TextField(max_length=2000, blank=True)
+    '''Description of the treebank.'''
     treebank = models.OneToOneField(Treebank, on_delete=models.SET_NULL,null=True)
     '''Initialized later.'''
     input_file = models.FileField(upload_to='uploaded_treebanks/', blank=True)
@@ -112,7 +121,7 @@ class TreebankUpload(models.Model):
         '''Helper method to discover the metadata for a number of sentences
         (to be passed in xml as the argument to this method). This method
         updates the private _metadata class attribute.'''
-        root = etree.fromstring(xml)
+        root = ET.fromstring(xml)
         for sentence in root.findall('alpino_ds'):
             metadata = sentence.find('metadata')
             for meta in metadata.findall('meta'):
@@ -190,7 +199,11 @@ class TreebankUpload(models.Model):
             self.components[component].append(path)
 
     def _read_input_files(self):
-        '''Divide extracted files into components and probe input format'''
+        '''Divide extracted files into components and probe input format.
+        Files in the root of the input_dir will be put in a 'main' component.
+        Direct subdirs will become components with the name of the directory.
+        All files in the subdirs will be put in the corresponding component.
+        '''
         inputpath = Path(self.input_dir)
 
         # Put all toplevel files in a 'main' component and all files
@@ -209,9 +222,33 @@ class TreebankUpload(models.Model):
         method runs without error, the processing is ready to start and
         the components class attribute (a dict of all components with
         the corresponding filenames) is available.'''
-        if not self.input_dir:
-            self._unpack()
-        self._read_input_files()
+        
+        # Do this first, don't bother with expensive operations if this fails
+        if (self.name):
+            treebankslug = slugify(self.name)
+        elif (self.title):
+            treebankslug = slugify(self.title)
+        elif (self.input_file):
+            treebankslug = slugify(self.input_file.name)
+        elif (self.input_dir):
+            treebankslug = slugify(Path(self.input_dir).name)
+        else:
+            raise UploadError('No name or input file or directory provided')
+        
+        self.title = self.title if not self.title == '' else self.name if self.name else treebankslug
+        self.name = treebankslug
+
+        # Check if treebank already exists
+        if Treebank.objects.filter(slug=treebankslug).exists():
+            raise TreebankExistsError('Treebank {} already exists.'
+                              .format(treebankslug))
+        
+        try: 
+            if not self.input_dir:
+                self._unpack()
+            self._read_input_files()
+        except Exception as e:
+            raise UploadError('Could not prepare upload: {}'.format(str(e)))
 
     def _generate_blocks(self, filenames, componentslug):
         '''A generator function converting all files in filenames to
@@ -222,65 +259,67 @@ class TreebankUpload(models.Model):
         # possible changes in what Alpino returns.
         current_output = []
         current_length = 0
-        current_id = 0
         current_file = 0
         nr_words = 0
         nr_sentences = 0
         for filename in filenames:
-            converter = Converter(FilesystemCollector([filename]),
-                                  annotators=[alpino.annotator],
-                                  target=MemoryTarget(),
-                                  writer=LassyWriter(True))
-            parses = converter.convert()
-            try:
-                results = list(parses)
-            except Exception as e:
-                logger.error('Could not process file {} - skipping: {}'
-                             .format(filename, str(e)))
-                current_file += 1
-                continue
+            if (self.input_format != self.InputFormat.ALPINO):
+                try:
+                    converter = Converter(
+                        collector = FilesystemCollector([filename]),
+                        annotators = [alpino.annotator],
+                        reader = AutoReader(),
+                        target = MemoryTarget(),
+                        writer = LassyWriter(True))
+                    parses = converter.convert()
+                    results = list(parses)
+                except Exception as e:
+                    logger.error('Could not process file {} - skipping: {}'.format(filename, str(e)))
+                    current_file += 1
+                    continue
+            else:
+                # The file is already in alpino format. Mirror the output of the Converter, which is just a list containing a single string with the document.
+                with open(filename, 'r') as f:
+                    results = [f.read()]
+            
             assert len(results) == 1
-            parse = results[0]
             current_file += 1
-            current_length += len(parse)
-            stripped = parse.strip()
-            stripped = re.sub(
-                '^' + re.escape(
-                    '<?xml version="1.0" encoding="UTF-8"?>\n<treebank>'
-                ), '', stripped
-            )  # Alternative for str.removeprefix()
-            stripped = re.sub(
-                re.escape('</treebank>') + '$', '', stripped
-            )
-            lines = stripped.split('\n')
-            for line in lines:
-                if 'cat="top"' in line:
-                    # Like gretel-upload, determine number of words using the
-                    # 'end' attribute in the top-level node
-                    nr_words += int(
-                        re.search('end=\"(.+?)\"', line).group(1)
-                    )
-                if '<alpino_ds' in line:
-                    # Each <alpino_ds> tag contains one sentence
-                    nr_sentences += 1
-                    # Add id to the end of the tag for identification in GrETEL
-                    tagend_pos = line.find('">') + 1
-                    id_attr = ' id="{}:{}"'.format(componentslug, current_id)
-                    line = line[:tagend_pos] + id_attr + line[tagend_pos:]
-                    current_id += 1
-                current_output.append(line)
-            if current_length > MAXIMUM_DATABASE_SIZE:
-                # Yield as soon as the maximum length is reached
-                yield ('<treebank>' + ''.join(current_output) + '</treebank>',
-                       nr_words, nr_sentences, current_file)
-                current_length = 0
-                nr_words = 0
-                nr_sentences = 0
-                current_output.clear()
+            
+            # Add ids to the sentences.
+            sentences = self.label_and_extract_sentences(results[0], componentslug)
+            for sentence, wordcount in sentences:
+                current_output.append(sentence)
+                current_length += len(sentence)
+                nr_words += wordcount
+                nr_sentences += 1
+                if current_length > MAXIMUM_DATABASE_SIZE:
+                    # Yield as soon as the maximum length is reached
+                    yield ('<treebank>' + ''.join(current_output) + '</treebank>', nr_words, nr_sentences, current_file)
+                    current_length = 0
+                    nr_words = 0
+                    nr_sentences = 0
+                    current_output.clear()
         # Yield once more as soon as all files have been read
-        yield ('<treebank>' + ''.join(current_output) + '</treebank>',
-               nr_words, nr_sentences, current_file)
+        if (current_length > 0):
+            yield ('<treebank>' + ''.join(current_output) + '</treebank>',
+                nr_words, nr_sentences, current_file)
 
+    def label_and_extract_sentences(self, alpino_document: bytes, component_slug: str) -> list[tuple[str, int]]:
+        """Extract all <alpino_ds> sentences, add an id to the sentence.
+        Returns the sentences along with the number of words in the sentence."""
+        root = ET.fromstring(alpino_document.encode('utf-8')) # encoding hoop because lxml is stupid
+        sentences: list[tuple[str, int]] = []
+        # Use local-name() so that any namespace prefixes are ignored
+        for sentence in root.xpath('//*[local-name()="alpino_ds"]'):
+            sentence.set('id', component_slug + ':' + str(len(sentences)))
+            root = sentence.xpath('.//*[local-name()="node" and @cat="top"]/@end')
+            # Rarely might encounter a sentence where the root has no start or end attributes.
+            # In that case, try counting the words manually.
+            wordcount = int(root[0]) if len(root) > 0 else int(sentence.xpath('count(.//*[local-name()="node" and @begin])'))
+            sentences.append((ET.tostring(sentence, encoding="unicode"), wordcount))
+        
+        return sentences
+    
     def process(self):
         '''Process prepared treebank upload. This method converts the
         prepared input files to Alpino format, uploads them to BaseX,
@@ -297,80 +336,69 @@ class TreebankUpload(models.Model):
         if not self.input_dir or not hasattr(self, 'components'):
             raise UploadError('prepare() has to be called first')
 
-        if (self.name):
-            treebankslug = slugify(self.name)
-        elif (self.input_file):
-            treebankslug = slugify(self.input_file.name)
-        elif (self.input_dir):
-            treebankslug = slugify(Path(self.input_dir).name)
-        else:
-            raise UploadError('No name or input file or directory provided')
+        try:
+            # TODO add description field to UI, here, and pass it on.
+            treebank = Treebank(
+                slug=self.name, 
+                title=self.title,
+                description=self.description
+            )
+            # probably want to do this to prevent race conditions
+            treebank.save(force_insert=True)
+            component_objs = []
+            basexdb_objs = []
+            total_number_of_files = sum([len(x) for x in self.components.values()])
+            total_processed_files = 0
+            self._metadata = {}
+            for component in self.components:
+                logger.info('Processing component {} out of {}'
+                            .format(len(component_objs) + 1, len(self.components)))
+                nr_words = 0
+                nr_sentences = 0
+                componentslug = slugify(component)
+                comp_obj = Component(slug=componentslug, title=component, treebank=treebank)
+                component_objs.append(comp_obj)
+                filenames = [str(x) for x in self.components[component]]
+                if not len(filenames):
+                    logger.warning('Component {} is empty.'.format(component))
+                    continue
+                db_sequence = 0
 
-        # Check if treebank already exists
-        if Treebank.objects.filter(slug=treebankslug).exists():
-            raise UploadError('Treebank {} already exists.'
-                              .format(treebankslug))
+                # TODO we're parsing the documents twice (once for sentence extraction, once for metadata extraction). This is inefficient.
+                # We should refactor this to only parse the documents once.
+                for result in self._generate_blocks(filenames, componentslug):
+                    doc, words, sentences, files_processed = result
+                    self._discover_metadata(doc)
+                    nr_words += words
+                    nr_sentences += sentences
+                    comp_obj.nr_sentences = nr_sentences
+                    comp_obj.nr_words = nr_words
+                    comp_obj.save()
+                    dbname = f'GRETEL5_{self.name}_{componentslug}_{db_sequence}'.upper()
+                    basexdb_obj = BaseXDB(dbname)
+                    basexdb_objs.append(basexdb_obj)
+                    basexdb_obj.component = comp_obj
+                    basex.create(dbname, doc)
+                    basexdb_obj.size = basexdb_obj.get_db_size()
+                    basexdb_obj.save()
+                    db_sequence += 1
+                    percentage_component = int(files_processed / len(filenames) * 100)
+                    percentage = int((files_processed + total_processed_files) / total_number_of_files * 100)
+                    logger.info('{} out of {} files processed ({}%, {}% of total)'
+                                .format(files_processed, len(filenames),
+                                        percentage_component, percentage))
+                total_processed_files += files_processed
+            treebank.metadata = self.get_metadata()
+            treebank.save()
+        except Exception as e:
+            raise UploadError('Could not process treebank: {}'.format(str(e)))
 
-        treebank = Treebank(slug=treebankslug, title=treebankslug)
-        treebank.save()
-        component_objs = []
-        basexdb_objs = []
-        total_number_of_files = sum([len(x) for x in self.components.values()])
-        total_processed_files = 0
-        self._metadata = {}
-        for component in self.components:
-            logger.info('Processing component {} out of {}'
-                        .format(len(component_objs) + 1, len(self.components)))
-            nr_words = 0
-            nr_sentences = 0
-            componentslug = slugify(component)
-            comp_obj = Component(slug=componentslug, title=componentslug)
-            comp_obj.treebank = treebank
-            component_objs.append(comp_obj)
-            filenames = [str(x) for x in self.components[component]]
-            if not len(filenames):
-                logger.warning('Component {} is empty.'.format(component))
-                continue
-            db_sequence = 0
-            for result in self._generate_blocks(filenames, componentslug):
-                doc, words, sentences, files_processed = result
-                self._discover_metadata(doc)
-                nr_words += words
-                nr_sentences += sentences
-                comp_obj.nr_sentences = nr_sentences
-                comp_obj.nr_words = nr_words
-                comp_obj.save()
-                dbname = ('GRETEL5_' + treebankslug + '_' + componentslug +
-                          '_' + str(db_sequence)).upper()
-                basexdb_obj = BaseXDB(dbname)
-                basexdb_objs.append(basexdb_obj)
-                basexdb_obj.component = comp_obj
-                basex.create(dbname, doc)
-                basexdb_obj.size = basexdb_obj.get_db_size()
-                basexdb_obj.save()
-                db_sequence += 1
-                percentage_component = int(files_processed
-                                           / len(filenames) * 100)
-                percentage = int((files_processed + total_processed_files) /
-                                 total_number_of_files * 100)
-                logger.info('{} out of {} files processed ({}%, {}% of total)'
-                            .format(files_processed, len(filenames),
-                                    percentage_component, percentage))
-            total_processed_files += files_processed
-        treebank.metadata = self.get_metadata()
-        treebank.save()
+    def save(self):
+        raise UploadError('Do not save TreebankUpload instances')
 
     def cleanup(self):
         if not self.temporary_unpack_directory is None:
             self.temporary_unpack_directory.cleanup()
-        if not self.input_file is None:
-            self.input_file.delete()
-
-
-class Contact(models.Model):
-    name = models.CharField(max_length=100)
-    email = models.EmailField()
-    message = models.TextField()
-
-    def __str__(self):
-        return self.name
+        # Hmm. can't do this right now, it calls save() 
+        # if not self.input_file is None:
+        #     self.input_file.delete()

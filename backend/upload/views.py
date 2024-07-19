@@ -9,7 +9,7 @@ from rest_framework.renderers import JSONRenderer, BrowsableAPIRenderer
 from rest_framework.authentication import BasicAuthentication
 from rest_framework import status
 
-from upload.models import TreebankUpload
+from upload.models import TreebankUpload, UploadError, TreebankExistsError
 from upload.serializers import TreebankUploadSerializer
 
 @api_view(['POST'])
@@ -22,13 +22,23 @@ def upload_view(request: Request, treebank: str):
 	serializer = TreebankUploadSerializer(data=request.data, context={'request': request})
 	serializer.is_valid(raise_exception=True)
 
-	upload = TreebankUpload(**serializer.validated_data)
-	upload.prepare()
-	upload.process()
-	upload.treebank.save()
-	upload.cleanup()
+	try:
+		upload = TreebankUpload(**serializer.validated_data)
+		upload.prepare()
+		upload.process()
+	except TreebankExistsError:
+		pass
+	except Exception as e:
+		# Duplication error is raised as TreebankExists
+		upload.treebank.delete()
+		return Response(
+			{'error': str(e)},
+			status=status.HTTP_400_BAD_REQUEST
+		)
+	finally: 
+		upload.cleanup()
 
 	return Response(
-		upload.treebank.serialize(),
+		TreebankUploadSerializer(upload).data,
 		status=status.HTTP_201_CREATED
 	)	
