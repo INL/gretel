@@ -16,6 +16,7 @@ services:
     profiles: 
       - production
       - prod
+      - ""
     container_name: gretel-backend
     image: instituutnederlandsetaal/gretel5-backend
     build: 
@@ -31,7 +32,7 @@ services:
       - 5678:5678
       - 8000:8000
 
-  backend-live:
+  backend-dev:
     profiles: 
       - development
       - dev
@@ -53,9 +54,45 @@ services:
       - ../../backend:/app/backend
     # need to run migrations (which inits db) because we overwrite the database file with the volume.
     command: bash -c "
-      python manage.py migrate &&
-      python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --pythonpath ..
-      "
+      python manage.py migrate && 
+      python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --pythonpath .."
+
+  celery: 
+    profiles: 
+      - production
+      - prod
+      - ""
+    container_name: gretel-celery
+    image: instituutnederlandsetaal/gretel5-backend
+    build: 
+      context: ../..
+      dockerfile: docker/production/Dockerfile
+      target: backend
+    # Same env as backend as we are basically a duplicate
+    environment: 
+      REDIS_HOST: redis
+      BASEX_HOST: basex
+      ALPINO_HOST: alpino
+    command: bash -c "python -m celery -A gretel.celery worker -l info -B"
+
+  celery-dev: 
+    profiles: 
+      - development
+      - dev
+    container_name: gretel-celery
+    image: instituutnederlandsetaal/gretel5-backend
+    build: 
+      context: ../..
+      dockerfile: docker/production/Dockerfile
+      target: backend
+    volumes: 
+      - ../../backend:/app/backend
+    # Same env as backend as we are basically a duplicate
+    environment: 
+      REDIS_HOST: redis
+      BASEX_HOST: basex
+      ALPINO_HOST: alpino
+    command: bash -c "python -m celery -A gretel.celery worker -l info -B"
 
   alpino:
     container_name: gretel-alpino
