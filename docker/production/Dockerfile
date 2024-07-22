@@ -24,6 +24,12 @@ RUN python manage.py migrate
 # Debug mode.
 RUN python -m pip install debugpy
 
+RUN echo "\
+ALLOWED_HOSTS = ['*'] \n\
+" >> gretel/settings.py
+
+
+
 # CMD python -Xfrozen_modules=off -m debugpy --wait-for-client --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --pythonpath ..
 CMD python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --pythonpath ..
 
@@ -57,14 +63,10 @@ FROM backend as staticfiles-backend
 
 # Collect static files. 
 RUN echo "\
-import os.path as op \n\
-# collect files in ./static \
-# ALLOWED_HOSTS = ['localhost', '127.0.0.1', '::1'] \n\
 STATIC_ROOT = '/app/static' \n\
 " >> gretel/settings.py
 
 RUN mkdir /app/static
-RUN ls -l
 RUN python manage.py collectstatic --noinput
 
 FROM nginx:1.27-alpine as frontend
