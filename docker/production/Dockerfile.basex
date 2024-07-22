@@ -8,9 +8,9 @@ RUN apt-get update && apt-get install -y wget unzip
 
 WORKDIR /basex
 
-RUN wget https://files.basex.org/releases/11.0/BaseX110.zip
-RUN unzip BaseX110.zip
-RUN rm BaseX110.zip
+RUN wget https://files.basex.org/releases/10.6/BaseX106.zip
+RUN unzip BaseX106.zip
+RUN rm BaseX106.zip
 RUN mv basex/* . && mv basex/.basexhome . && rmdir basex
 
 # Create admin user password so network access is possible
