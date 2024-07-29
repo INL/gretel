@@ -338,7 +338,7 @@ class TreebankUpload(models.Model):
             current_file += 1
             
             # Add ids to the sentences.
-            sentences = self.preprocess_sentences(results[0], componentslug)
+            sentences = self.preprocess_sentences(results[0], current_file, componentslug)
             for sentence, wordcount in sentences:
                 current_output.append(sentence)
                 current_length += len(sentence)
@@ -356,7 +356,7 @@ class TreebankUpload(models.Model):
             yield ('<treebank>' + ''.join(current_output) + '</treebank>',
                 nr_words, nr_sentences, current_file)
 
-    def preprocess_sentences(self, alpino_document: str, component_slug: str) -> list[tuple[str, int]]:
+    def preprocess_sentences(self, alpino_document: str, file_id: int, component_slug: str) -> list[tuple[str, int]]:
         '''Extract all <alpino_ds> sentences, add an id to the sentence. Removes all namespaces.
         Returns the sentences along with the number of words in the sentence.'''
         root = ET.fromstring(alpino_document.encode('utf-8')) # encoding hoop because lxml is stupid
@@ -377,7 +377,7 @@ class TreebankUpload(models.Model):
 
         # Use local-name() so that any namespace prefixes are ignored
         for sentence in root.xpath('//alpino_ds'):
-            sentence.set('id', f'{component_slug}:{len(sentences)}')
+            sentence.set('id', f'{component_slug}:${file_id}:{len(sentences)}')
             root = sentence.xpath('.//node[@cat="top"]/@end')
             # Rarely might encounter a sentence where the root has no start or end attributes.
             # In that case, try counting the words manually.
