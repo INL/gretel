@@ -8,12 +8,12 @@ import { NotificationService, UploadService, UploadStreamError, UploadStreamEven
 })
 export class UploadComponent {
     treebankName = '';
-    file: File = null;
+    treebankDescription= '';
+    treebankHelpUrl = '';
     format = '';
-    sentenceTokenized = false;
-    wordTokenized = false;
-    sentencesLabeled = false;
     isPublic = false;
+        
+    file: File = null;
 
     warning = '';
     isUploading = false;
@@ -36,9 +36,9 @@ export class UploadComponent {
             file: this.file,
             format: this.format,
             isPublic: this.isPublic,
-            sentenceTokenized: this.sentenceTokenized,
-            sentencesLabeled: this.sentencesLabeled,
-            wordTokenized: this.wordTokenized,
+            treebankDescription: this.treebankDescription,
+            treebankHelpUrl: this.treebankHelpUrl,
+            treebankDisplay: this.treebankName,
         })
         .subscribe({
             next: (v: UploadStreamEvent) => {

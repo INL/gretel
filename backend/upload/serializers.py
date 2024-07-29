@@ -10,17 +10,17 @@ class TreebankUploadSerializer(serializers.ModelSerializer):
         model = TreebankUpload
         fields = [
             'name',
-
+            'title',
+            'description',
+            'url_more_info',
+            
             'input_file', 
             'input_format',
 
             # 'upload_timestamp',
             'uploaded_by',
 
-            'public', 
-            'sentence_tokenized', 
-            'word_tokenized', 
-            'sentences_have_labels', 
+            'public'
         ]
 
     def _user(self, obj):
