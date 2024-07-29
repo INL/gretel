@@ -98,6 +98,7 @@ export class UploadService {
                 } else if (response.status === 'SUCCESS') {
                     upload$.next(new UploadStreamEvent('Upload complete!', 100));
                     upload$.complete();
+                    break;
                 } else if (response.status === 'FAILURE') {
                     upload$.error(new UploadStreamError(response.info.error));
                     break;
