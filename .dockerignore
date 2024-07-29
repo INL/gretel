@@ -9,3 +9,8 @@ docker/production/Dockerfile
 docker/production/Dockerfile.basex
 
 README.md
+
+db.sqlite3
+celerybeat-schedule
+**/uploaded_treebanks
+**/query_result_cache
