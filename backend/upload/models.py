@@ -338,7 +338,7 @@ class TreebankUpload(models.Model):
             current_file += 1
             
             # Add ids to the sentences.
-            sentences = self.label_and_extract_sentences(results[0], componentslug)
+            sentences = self.preprocess_sentences(results[0], componentslug)
             for sentence, wordcount in sentences:
                 current_output.append(sentence)
                 current_length += len(sentence)
@@ -356,18 +356,32 @@ class TreebankUpload(models.Model):
             yield ('<treebank>' + ''.join(current_output) + '</treebank>',
                 nr_words, nr_sentences, current_file)
 
-    def label_and_extract_sentences(self, alpino_document: str, component_slug: str) -> list[tuple[str, int]]:
-        '''Extract all <alpino_ds> sentences, add an id to the sentence.
+    def preprocess_sentences(self, alpino_document: str, component_slug: str) -> list[tuple[str, int]]:
+        '''Extract all <alpino_ds> sentences, add an id to the sentence. Removes all namespaces.
         Returns the sentences along with the number of words in the sentence.'''
         root = ET.fromstring(alpino_document.encode('utf-8')) # encoding hoop because lxml is stupid
         sentences: list[tuple[str, int]] = []
+
+
+        # Remove namespaces from the doc.
+        for elem in root.getiterator():
+            # Skip comments and processing instructions,
+            # because they do not have names
+            if not (isinstance(elem, etree._Comment) or isinstance(elem, etree._ProcessingInstruction)):
+                # Remove a namespace URI in the element's name
+                elem.tag = etree.QName(elem).localname
+                root.attrib.pop("xmlns", None)
+
+        # Remove unused namespace declarations
+        etree.cleanup_namespaces(root)
+
         # Use local-name() so that any namespace prefixes are ignored
-        for sentence in root.xpath('//*[local-name()="alpino_ds"]'):
+        for sentence in root.xpath('//alpino_ds'):
             sentence.set('id', f'{component_slug}:{len(sentences)}')
-            root = sentence.xpath('.//*[local-name()="node" and @cat="top"]/@end')
+            root = sentence.xpath('.//node[@cat="top"]/@end')
             # Rarely might encounter a sentence where the root has no start or end attributes.
             # In that case, try counting the words manually.
-            wordcount = int(root[0]) if len(root) > 0 else int(sentence.xpath('count(.//*[local-name()="node" and @begin])'))
+            wordcount = int(root[0]) if len(root) > 0 else int(sentence.xpath('count(.//node[@begin])'))
             sentences.append((ET.tostring(sentence, encoding="unicode"), wordcount))
         
         return sentences
