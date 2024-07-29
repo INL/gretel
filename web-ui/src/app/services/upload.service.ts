@@ -93,8 +93,7 @@ export class UploadService {
                     const fileProgress = response.info.processed_files > 0 ? `${response.info.processed_files}/${response.info.total_files} files` : '';
                     const componentProgress = response.info.processed_components > 0 ? `${response.info.processed_components}/${response.info.total_components} components` : '';
                     const wordsAndSentences = response.info.words > 0 ? `${response.info.words} words, ${response.info.sentences} sentences` : '';
-                    
-                    const message = `${response.info.message} - ${fileProgress}, ${componentProgress}, ${wordsAndSentences}`;
+                    const message = `${response.info.message} - ${[fileProgress, componentProgress, wordsAndSentences].filter(x => x).join(', ')}`;
                     upload$.next(new UploadStreamEvent(message, progressPercentage));
                 } else if (response.status === 'SUCCESS') {
                     upload$.next(new UploadStreamEvent('Upload complete!', 100));
