@@ -23,14 +23,22 @@ services:
       context: ../..
       dockerfile: docker/production/Dockerfile
       target: backend
-  
     environment: 
       REDIS_HOST: redis
       BASEX_HOST: basex
       ALPINO_HOST: alpino
+      DATABASE_PATH: /app/backend/database/db.sqlite3
+    volumes: 
+      - gretel-database:/app/backend/database/
+      - gretel-uploads:/app/backend/uploaded_treebanks/
+      - gretel-results-cache:/app/backend/query_result_cache/
     ports: 
       - 5678:5678
       - 8000:8000
+    command: bash -c "
+      python manage.py migrate && 
+      python manage.py runserver 0.0.0.0:8000 --pythonpath .."
+
 
   backend-dev:
     profiles: 
@@ -73,6 +81,11 @@ services:
       REDIS_HOST: redis
       BASEX_HOST: basex
       ALPINO_HOST: alpino
+      DATABASE_PATH: /app/backend/database/db.sqlite3
+    volumes: 
+      - gretel-database:/app/backend/database/
+      - gretel-uploads:/app/backend/uploaded_treebanks/
+      - gretel-results-cache:/app/backend/query_result_cache/
     command: bash -c "python -m celery -A gretel.celery worker -l info"
 
   celery-dev: 
@@ -123,5 +136,7 @@ services:
     # volumes: 
     #   - basex-data:/data
 
-
-
+volumes: 
+  gretel-database:
+  gretel-uploads:
+  gretel-results-cache:

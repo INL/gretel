@@ -27,10 +27,8 @@ RUN echo "\
 ALLOWED_HOSTS = ['*'] \n\
 " >> gretel/settings.py
 
-
-
 # CMD python -Xfrozen_modules=off -m debugpy --wait-for-client --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --pythonpath ..
-CMD python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --pythonpath ..
+CMD python manage.py migrate && python manage.py runserver 0.0.0.0:8000 --pythonpath ..
 
 # Regular mode.
 # CMD python manage.py runserver
