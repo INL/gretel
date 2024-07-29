@@ -150,6 +150,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 0
 
 # Celery settings
 CELERY_BROKER_URL = 'redis://' + os.getenv('REDIS_HOST', 'localhost')
+CELERY_RESULT_BACKEND = 'redis://' + os.getenv('REDIS_HOST', 'localhost')
 
 # BaseX connection settings - change in production
 BASEX_HOST = os.getenv('BASEX_HOST', 'localhost')
