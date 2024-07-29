@@ -9,20 +9,19 @@ RUN apt install unar -y
 # Copy requirements.in, expand then, and install the dependencies.
 RUN python -m pip install pip-tools
 
-
-
 COPY backend/requirements.in backend/requirements.in
 RUN pip-compile backend/requirements.in --output-file backend/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip-sync backend/requirements.txt
 
+
+# Debug mode.
+RUN python -m pip install debugpy
+
 # Copy the backend code.
 COPY backend backend
 WORKDIR /app/backend
 RUN python manage.py migrate
-
-# Debug mode.
-RUN python -m pip install debugpy
 
 RUN echo "\
 ALLOWED_HOSTS = ['*'] \n\

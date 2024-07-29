@@ -73,7 +73,7 @@ services:
       REDIS_HOST: redis
       BASEX_HOST: basex
       ALPINO_HOST: alpino
-    command: bash -c "python -m celery -A gretel.celery worker -l info -B"
+    command: bash -c "python -m celery -A gretel.celery worker -l info"
 
   celery-dev: 
     profiles: 
@@ -92,7 +92,9 @@ services:
       REDIS_HOST: redis
       BASEX_HOST: basex
       ALPINO_HOST: alpino
-    command: bash -c "python -m celery -A gretel.celery worker -l info -B"
+    ports: 
+      - 5679:5679
+    command: bash -c "python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5679 -m celery -A gretel.celery worker -l info -P solo"
 
   alpino:
     container_name: gretel-alpino

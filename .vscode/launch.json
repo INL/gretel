@@ -5,6 +5,21 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
+			"name": "Python Debugger: Attach to celery docker container",
+			"type": "debugpy",
+			"request": "attach",
+			"connect": {
+				"host": "localhost",
+				"port": 5679
+			},
+			"pathMappings": [
+				{
+					"localRoot": "${workspaceFolder}/backend",
+					"remoteRoot": "/app/backend"
+				}
+			]
+		},
+		{
 			"name": "Python Debugger: Attach to backend docker container",
 			"type": "debugpy",
 			"request": "attach",
