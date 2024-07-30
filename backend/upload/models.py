@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import tempfile
 import re
+import traceback
 import patoolib
 from lxml import etree
 import logging
@@ -494,7 +495,7 @@ class TreebankUpload(models.Model):
             ''}{p.processed_components}/{p.total_components} components ({p.processed_components / max(1, p.total_components)})%.''')
 
     # Cleanup() might not be smart here, because we might want to keep the treebank around for debugging purposes.
-    def _report_error(self, message: str, e: Exception = None):
+    def _report_error(self, message: str, e: Union[Exception, None] = None):
         '''
         Generally abort processing.
         1) Set error state. 2) Mark done. 3) Log error & report to progress reporter. 4) Clean files. 5) Raise an UploadError.
@@ -506,7 +507,6 @@ class TreebankUpload(models.Model):
         if (e):
             logger.error(message, exc_info=e)
             p.stack = traceback.format_exc()
-
 
         logger.error(message)
         self.cleanup(delete_treebank=(self.treebank is not None))
