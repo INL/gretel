@@ -150,11 +150,9 @@ class TreebankUpload(models.Model):
             datas.append(data)
         return datas
 
-    def _discover_metadata(self, xml: str):
-        '''Helper method to discover the metadata for a number of sentences
-        (to be passed in xml as the argument to this method). This method
-        updates the private _metadata class attribute.'''
-        root = ET.fromstring(xml)
+    def _discover_metadata(self, root: ET._Element):
+        '''Helper method to discover the metadata for a number of sentences.
+        This method updates the private _metadata class attribute.'''
         for sentence in root.findall('alpino_ds'):
             metadata = sentence.find('metadata')
             for meta in metadata.findall('meta'):
@@ -384,6 +382,9 @@ class TreebankUpload(models.Model):
             wordcount = int(root[0]) if len(root) > 0 else int(sentence.xpath('count(.//node[@begin])'))
             sentences.append((ET.tostring(sentence, encoding="unicode"), wordcount))
         
+        self._discover_metadata(root)
+
+
         return sentences
     
     def process(self):
@@ -439,9 +440,6 @@ class TreebankUpload(models.Model):
                     component_words += words
                     component_sentences += sentences
                     
-                    self._discover_metadata(doc)
-                    # nr_words += words
-                    # nr_sentences += sentences
                     comp_obj.nr_sentences = component_sentences
                     comp_obj.nr_words = component_words
                     self.PROGRESS.processed_files = total_files_processed
