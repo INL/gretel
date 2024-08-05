@@ -8,8 +8,11 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.renderers import JSONRenderer, BrowsableAPIRenderer
 from rest_framework.authentication import BasicAuthentication
 from rest_framework import status
+from django.utils.text import slugify
 
-from upload.models import TreebankUpload, UploadProgress, TreebankExistsError
+from treebanks.models import Treebank
+from treebanks.serializers import TreebankSerializer
+from upload.models import TreebankUpload, TreebankExistsError
 from upload.serializers import TreebankUploadSerializer
 from upload.tasks import process_upload
 
@@ -18,29 +21,49 @@ from upload.tasks import process_upload
 @renderer_classes([JSONRenderer, BrowsableAPIRenderer])
 @parser_classes([MultiPartParser])
 def upload_view(request: Request, treebank: str):
-	request.data['name'] = treebank
-
-	serializer = TreebankUploadSerializer(data=request.data, context={'request': request})
-	if not serializer.is_valid():
-		duplicate = TreebankUpload.objects.get(name=treebank)
-		if duplicate.treebank is not None:
-			return Response({
+	# Just check here that the treebank doesn't exist yet.
+	if Treebank.objects.filter(slug=treebank).exists():
+		raise TreebankExistsError('Treebank already exists')
+	
+	request.data['slug'] = slugify(treebank)
+	
+	treebankSerializer = TreebankSerializer(data = request.data)
+	uploadSerializer = TreebankUploadSerializer(data = request.data, context={'request': request})
+	# There is a specific order of operations here:
+	# The treebank needs to be created first so the upload foreign key exists
+	# Then the upload can be created
+	# If the upload can't be created, the treebank needs to be deleted again.
+	if treebankSerializer.is_valid():
+		treebankObj = treebankSerializer.save()
+		if uploadSerializer.is_valid():
+			uploadObj = uploadSerializer.save()
+		else: 
+			treebankObj.delete()
+			return Response(
+				{
+					'status': 'FAILURE',
+					'info': {
+						'error': uploadSerializer.errors,
+						'message': 'Invalid data',
+						'done': True
+					}
+				},
+				status=status.HTTP_400_BAD_REQUEST
+			)
+	else:
+		return Response(
+			{
 				'status': 'FAILURE',
 				'info': {
-					'error': 'Treebank already exists',
-					'message': 'Treebank already exists',
+					'error': treebankSerializer.errors,
+					'message': 'Invalid data',
 					'done': True
 				}
-			}, status=status.HTTP_400_BAD_REQUEST)
-		else:
-			duplicate.delete()
-
-	serializer.is_valid(raise_exception=True)
-
-	# TODO uniqueness constraint?
-	upload = TreebankUpload(**serializer.validated_data)
-	upload.save()
-	task = process_upload.delay(upload_id=upload.pk)
+			},
+			status=status.HTTP_400_BAD_REQUEST
+		)
+	
+	task = process_upload.delay(upload_id=uploadObj.treebank.slug)
 
 	return Response(
 		{'upload_id': task.id},
