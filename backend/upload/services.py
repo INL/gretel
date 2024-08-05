@@ -29,43 +29,40 @@ MAXIMUM_DATABASE_SIZE = 1024 * 1024 * 10  # 10 MiB
 MAX_METADATA_OPTIONS = 100
 
 class UploadProgress:
-    total_files = 0
-    processed_files = 0
-    total_components = 0
-    processed_components = 0
-    words = 0
-    sentences = 0
-    done = False
-    error: Union[str, None] = None
-    message = 'Not started yet'
+    def __init__(self):
+        self.total_files = 0
+        self.processed_files = 0
+        self.total_components = 0
+        self.processed_components = 0
+        self.words = 0
+        self.sentences = 0
+        self.done = False
+        self.error: Union[str, None] = None
+        self.message = 'Not started yet'
 
 class UploadProcessService: 
-    upload: TreebankUpload
-    progress_reporter: Optional[Callable[[str, dict], None]] = None
-
-    PROGRESS = UploadProgress()
-
-    _metadata: dict[str, dict] = {}
-    components: dict[str, list[Path]] = {}
-
-    _temp_unpack_directory: Optional[tempfile.TemporaryDirectory] = None
-    '''Temp dir for unpacking uploaded archives. 
-    Need to keep a handle to the temporary directory alive or it will be deleted.'''
-    _input_path: Optional[Path] = None
-    '''Path to the directory contained uploaded/unpacked files, or the input_file.
-    Only valid after prepare() has been called.'''
-
-    delete_input_files: bool = False
-    '''If the input files should be deleted after processing or errors.'''
-    
     def __init__(self, upload: TreebankUpload, progress_reporter: Union[Callable[[str, dict], None], None] = None, delete_input_files: bool = False):
         self.upload = upload
-        self.progress_reporter = progress_reporter
-        self.delete_input_files = delete_input_files
-        self._metadata = {}
-        self.components = {}
-        self._temp_unpack_directory = None
-        self._input_path = None
+        '''The TreebankUpload instance to process.'''
+        self.progress_reporter: Optional[Callable[[str, dict], None]] = progress_reporter
+        '''A callback function to report progress to the caller.'''
+
+        self.PROGRESS = UploadProgress()
+
+        self._metadata: dict[str, dict] = {}
+        '''Metadata discovered during processing. Format is the same as in the Treebank model.'''
+        self.components: dict[str, list[Path]] = {}
+        '''Files per component discovered.'''
+        self._temp_unpack_directory: Optional[tempfile.TemporaryDirectory] = None
+        '''Temp dir for unpacking uploaded archives. 
+        Need to keep a handle to the temporary directory alive or it will be deleted.'''
+
+        self._input_path: Optional[Path] = None
+        '''Path to the directory contained uploaded/unpacked files, or the input_file.
+        Only valid after prepare() has been called.'''
+
+        self.delete_input_files: bool = delete_input_files
+        '''If the input files should be deleted after processing or errors.'''
 
     def get_metadata(self):
         '''Return a dict containing the discovered metadata of this treebank,
@@ -391,6 +388,9 @@ class UploadProcessService:
 
     def cleanup(self):
         '''After indexing or failure, clean up temporary files.'''
+
+        logger.info('Cleaning up')
+
         if not self._temp_unpack_directory is None:
             self._temp_unpack_directory.cleanup()
             self._temp_unpack_directory = None
@@ -409,8 +409,8 @@ class UploadProcessService:
         
         logger.info(f'''{p.message}\n{
         ''}: {p.processed_files}/{p.total_files} files ({round(p.processed_files / max(1, p.total_files) * 100, 1)}%). {
-        ''}{p.processed_components}/{p.total_components} components ({round(p.processed_components / max(1, p.total_components) * 100, 1)})%.{
-        ''}{p.words} words, {p.sentences} sentences.''')
+        ''}{p.processed_components}/{p.total_components} components ({round(p.processed_components / max(1, p.total_components) * 100, 1)})%. {
+        ''}{p.words:_} words, {p.sentences:_} sentences.''')
 
     # Cleanup() might not be smart here, because we might want to keep the treebank around for debugging purposes.
     def _report_error(self, message: str, e: Union[Exception, None] = None) -> NoReturn:

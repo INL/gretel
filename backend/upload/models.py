@@ -4,6 +4,9 @@ from django.contrib.auth.models import User
 from pathlib import Path
 from treebanks.models import Treebank
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 class UploadError(RuntimeError):
     pass
@@ -55,5 +58,6 @@ class TreebankUpload(models.Model):
 
     def cleanup(self):
         '''Remove the uploaded file if it's a django upload.'''
-        if not isinstance(self.input_file, Path):
-            self.input_file.delete()
+        logger.info(f'Cleaning up {self.input_file}')
+        self.input_file.delete()
+

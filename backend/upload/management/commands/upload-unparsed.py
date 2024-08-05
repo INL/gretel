@@ -28,7 +28,7 @@ class Command(BaseCommand):
         treebank = Treebank(slug=slugify(options['name']), title=options['name'])
         treebank.save()
         upload = TreebankUpload(treebank = treebank, input_file = str(path), public=options['public'])
-        service = UploadProcessService(upload, progress_reporter=lambda state, progress: self.stdout.write(f'''{state}: {progress}'''))
+        service = UploadProcessService(upload)
         
         try:
             service.prepare()
