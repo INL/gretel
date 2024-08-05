@@ -66,11 +66,11 @@ export class UploadService {
             // A client-side or network error occurred. Handle it accordingly.
             return throwError(() => new UploadStreamError('Failed to communicate with server; please try again later.'));
         } else {
-            const r: {message: string} = error.error;
+            const r: UploadProgressResponse = error.error;
             // The backend returned an unsuccessful response code.
             // error.error contains the response body.
             // TODO should probably expose more info.
-            return throwError(() => new UploadStreamError(`Failed to upload or parse file: ${r.message}`));
+            return throwError(() => new UploadStreamError(`Failed to upload or parse file: ${r.info.error || r.info.message}`));
         }
     }
 
@@ -84,6 +84,7 @@ export class UploadService {
                 retries++;
                 intervalMs = 2500;
                 const response = await lastValueFrom(this.http.get<UploadProgressResponse>(url, {withCredentials: true, responseType: 'json'}));
+                debugger;
                 if (response.status === 'PENDING') {
                     intervalMs = 10000;
                     const elapsedSeconds = Math.round((new Date().getTime() - start) / 1000);

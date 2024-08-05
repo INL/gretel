@@ -21,10 +21,6 @@ from upload.tasks import process_upload
 @renderer_classes([JSONRenderer, BrowsableAPIRenderer])
 @parser_classes([MultiPartParser])
 def upload_view(request: Request, treebank: str):
-	# Just check here that the treebank doesn't exist yet.
-	if Treebank.objects.filter(slug=treebank).exists():
-		raise TreebankExistsError('Treebank already exists')
-	
 	request.data['slug'] = slugify(treebank)
 	
 	treebankSerializer = TreebankSerializer(data = request.data)
@@ -43,7 +39,7 @@ def upload_view(request: Request, treebank: str):
 				{
 					'status': 'FAILURE',
 					'info': {
-						'error': uploadSerializer.errors,
+						'error': format_serializer_errors(uploadSerializer.errors),
 						'message': 'Invalid data',
 						'done': True
 					}
@@ -55,7 +51,7 @@ def upload_view(request: Request, treebank: str):
 			{
 				'status': 'FAILURE',
 				'info': {
-					'error': treebankSerializer.errors,
+					'error': format_serializer_errors(treebankSerializer.errors),
 					'message': 'Invalid data',
 					'done': True
 				}
@@ -69,6 +65,26 @@ def upload_view(request: Request, treebank: str):
 		{'upload_id': task.id},
 		status=status.HTTP_201_CREATED
 	)
+
+def format_serializer_errors(errors: dict[str, dict[str, list[str]]]) -> str:
+    def recursive_format(error_dict, parent_key=''):
+        messages = []
+        for key, value in error_dict.items():
+            full_key = f"{parent_key}{key}" if parent_key else key
+            if isinstance(value, dict):
+                messages.extend(recursive_format(value, f"{full_key}."))
+            elif isinstance(value, list):
+                for sub_value in value:
+                    if isinstance(sub_value, dict):
+                        messages.extend(recursive_format(sub_value, f"{full_key}."))
+                    else:
+                        messages.append(f"{full_key}: {sub_value}")
+            else:
+                messages.append(f"{full_key}: {value}")
+        return messages
+    
+    formatted_messages = recursive_format(errors)
+    return "\n".join(formatted_messages)
 
 @api_view(['GET'])
 @authentication_classes([BasicAuthentication])
