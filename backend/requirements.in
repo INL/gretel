@@ -1,4 +1,4 @@
-Django>=4.0.1,<5
+Django>=4.2.0,<5
 djangorestframework>=3.13.0
 django-livereload-server
 django-revproxy>=0.10.0
@@ -12,5 +12,5 @@ celery[redis]>=5.2.0
 mwe-query>=0.0.5
 urllib3<=2.0.0
 psycopg2
-# file-validator>=1.0.9
 patool>=2.3.0
+django-rest-knox>=5.0.0

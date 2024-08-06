@@ -39,7 +39,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'livereload',
     'django.contrib.staticfiles',
-    # 'file_validator'
     'services',
     'treebanks',
     'search',
@@ -47,8 +46,13 @@ INSTALLED_APPS = [
     'parse',
     'mwe',
     'rest_framework',
+    'knox', # auth
     'revproxy',
 ]
+
+# REST_FRAMEWORK = {
+#     'DEFAULT_AUTHENTICATION_CLASSES': ('knox.auth.TokenAuthentication',),
+# }
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

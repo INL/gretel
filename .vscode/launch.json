@@ -8,6 +8,7 @@
 			"name": "Python Debugger: Attach to celery docker container",
 			"type": "debugpy",
 			"request": "attach",
+			"justMyCode": true,
 			"connect": {
 				"host": "localhost",
 				"port": 5679
@@ -23,6 +24,7 @@
 			"name": "Python Debugger: Attach to backend docker container",
 			"type": "debugpy",
 			"request": "attach",
+			"justMyCode": false,
 			"connect": {
 				"host": "localhost",
 				"port": 5678

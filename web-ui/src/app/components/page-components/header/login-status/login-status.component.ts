@@ -20,7 +20,7 @@ export class LoginStatusComponent implements OnInit, OnDestroy {
      * show the drop down menu
      */
     active = false;
-    allowLogin = false;
+    allowLogin = true;
     error = false;
     loading = false;
 
@@ -37,9 +37,7 @@ export class LoginStatusComponent implements OnInit, OnDestroy {
         private notificationService: NotificationService) { }
 
     ngOnInit(): void {
-        this.subscriptions.push(
-            this.userService.user$.subscribe(user => this.user = user),
-            this.userService.canLogin$.subscribe(canLogin => this.allowLogin = canLogin));
+        this.subscriptions.push(this.userService.user$.subscribe(user => this.user = user))
     }
 
     ngOnDestroy(): void {

@@ -4,27 +4,23 @@ import { BehaviorSubject } from 'rxjs';
 import { ConfigurationService } from './configuration.service';
 import { NotificationService } from './notification.service';
 
-type UserResponseSuccess = {
-    id: string;
-    logged_in: true;
-    username: string;
+type UserResponse = {
+    user: undefined|{
+        id: number;
+        username: string;
+    }
+    token: undefined|string;
 }
-
-type UserResponseFailure = {
-    logged_in: false
-}
-
-type UserResponse = UserResponseSuccess | UserResponseFailure;
 
 class InternalUser {
     id: number;
-    displayName: string;
     username: string;
+    token: string;
 
-    constructor(response: UserResponseSuccess) {
-        this.id = parseInt(response.id);
-        this.displayName = response.username;
-        this.username = response.username;
+    constructor(response: UserResponse) {
+        this.token = response.token;
+        this.id = response.user.id;
+        this.username = response.user.username;
     }
 };
 
@@ -39,7 +35,6 @@ export type User = {
 })
 export class UserService {
     private _user$: BehaviorSubject<User>;
-    private _canLogIn$ = new BehaviorSubject<boolean>(false);
 
     constructor(
         private http: HttpClient,
@@ -56,86 +51,63 @@ export class UserService {
         return this._user$;
     }
 
-    public get canLogin$() {
-        return this._canLogIn$.asObservable();
-    }
-
     /**
      * Retrieve the current user or set it to undefined
      */
     private async retrieveCurrent(): Promise<boolean> {
-        return false;
-        // const currentUrl = await this.configurationService.getUploadApiUrl('user');
-
-        // let response: UserResponse = await this.http.get(currentUrl, { withCredentials: true }).toPromise()
-        //     .catch((error: HttpErrorResponse) => null);
-
-        // if (response) {
-        //     this._canLogIn$.next(true);
-
-        //     if (!response.logged_in && response['id']) {
-        //         // not set on server
-        //         response.logged_in = true;
-        //     }
-        // }
-
-        // return this.setUser(response);
+        try {
+            const currentUrl = await this.configurationService.getDjangoUrl('auth/user/');
+            const response = await this.http.get<UserResponse>(currentUrl).toPromise();
+            return this.setUser(response.user ? new InternalUser(response) : undefined);
+        } catch (e) {
+            console.error('failed to get current user?', e);
+            return false;
+        }
     }
 
     /**
      * Logs the user in, returns true if successful
      */
     async login(username: string, password: string): Promise<boolean> {
-        return false;
-        // const loginUrl = await this.configurationService.getUploadApiUrl('user/login');
-
-        // const formData = new FormData();
-        // formData.append('username', username);
-        // formData.append('password', password);
-
-        // const response = <UserResponse>await this.http.post(
-        //     loginUrl,
-        //     formData,
-        //     { withCredentials: true }).toPromise();
-
-        // var success = this.setUser(response);
-        // if (success) {
-        //     if (!this.retrieveCurrent()) {
-        //         this.notificationService.add('Your credentials are correct, but login failed anyway. Might be a cross-domain issue with session cookies.', 'error');
-        //     }
-        // }
-
-        // return success;
+        try {
+            if (this._user$.value) {
+                console.error('User already logged in');
+                return false;
+            }
+            const jsonbody = {username, password};
+            const loginResponse = await this.http.post<UserResponse>(await this.configurationService.getDjangoUrl('auth/login/'),jsonbody,).toPromise();
+            return this.setUser(new InternalUser(loginResponse));
+        } catch (e) {
+            console.error('Failed to login', e);
+            return false;
+        }
     }
 
     /**
      * Logs the user out, returns true if successful
      */
     async logout(): Promise<boolean> {
-        return true;
-        // const logoutUrl = await this.configurationService.getUploadApiUrl('user/logout');
-
-        // try {
-        //     await this.http.post(logoutUrl, null, { withCredentials: true }).toPromise();
-        //     this.setUser(undefined);
-        //     return true;
-        // }
-        // catch (error) {
-        //     console.error(error);
-        // }
-
-        // return false;
+        try {
+            const user = await this.user$.toPromise()
+            if (!user || !user.token) {
+                console.error('No token found for user. Cannot perform logout');
+                return false;
+            }
+            const response = await this.http.post(await this.configurationService.getDjangoUrl('auth/logout/'), {token: user.token}).toPromise()
+            return this.setUser(undefined);
+        } catch (e) {
+            console.error('Failed to logout', e);
+            return false;
+        }
     }
 
     /** Update the current user and return a boolean indicating whether a user is now logged in (or not). */
-    private setUser(response: UserResponse): boolean {
+    private setUser(user?: InternalUser): boolean {
         if (!this._user$) {
             this._user$ = new BehaviorSubject<User>(undefined);
         }
 
-        const user = response?.logged_in ? new InternalUser(response) : undefined;
         this._user$.next(user);
-
-        return response?.logged_in ?? false;
+        return !!user;
     }
 }

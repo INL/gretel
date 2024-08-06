@@ -22,5 +22,9 @@ urlpatterns = [
 
     path('admin', RedirectView.as_view(url='/admin/', permanent=True)),
     path('admin/', admin.site.urls),
+
+    # auth module overrides /login, serve it first.
+    path('auth/', include('auth.urls')),
+
     # spa_url,  # catch-all; unknown paths to be handled by a SPA
 ]
