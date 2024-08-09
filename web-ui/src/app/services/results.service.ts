@@ -270,23 +270,6 @@ export class ResultsService {
         }, httpOptions).toPromise();
     }
 
-    /** On error the returned promise rejects with @type {HttpErrorResponse} */
-    async treebankCounts(xpath: string, provider: string, corpus: string, components: string[], metadataFilters: FilterValue[] = []) {
-        const results = await this.http.post<{ [componentId: string]: string }>(
-            await this.configurationService.getApiUrl(provider, 'treebank_counts'), {
-            xpath: this.createFilteredQuery(xpath, metadataFilters),
-            corpus,
-            components,
-        }, httpOptions).toPromise();
-
-        return Object.keys(results).map(componentId => {
-            return {
-                componentId: componentId,
-                count: parseInt(results[componentId], 10)
-            } as TreebankCount;
-        });
-    }
-
     /**
      * Modifies an xpath query to query on filters.
      *

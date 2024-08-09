@@ -33,4 +33,5 @@ env.bak/
 venv.bak/
 
 celerybeat-schedule.db
+celerybeat-schedule
 query_result_cache/*
