@@ -244,7 +244,6 @@ class Command(BaseCommand):
                 'Skipped {} files.'
                 .format(self.skipped_files)
             ))
-        self.treebank.processed = timezone.now()
         self.treebank.save()
 
     def handle(self, *args, **options):

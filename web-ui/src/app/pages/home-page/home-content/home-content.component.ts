@@ -8,14 +8,10 @@ import { ConfigurationService } from '../../../services/_index';
     templateUrl: './home-content.component.html',
     styleUrls: ['./home-content.component.scss']
 })
-export class HomeContentComponent implements OnInit {
+export class HomeContentComponent {
     faChevronRight = faChevronRight;
 
     public uploadUrl: SafeHtml;
 
     constructor(private configurationService: ConfigurationService, private sanitizer: DomSanitizer) { }
-
-    async ngOnInit() {
-        this.uploadUrl = this.sanitizer.sanitize(SecurityContext.URL, await this.configurationService.getUploadApiUrl('../../'));
-    }
 }
