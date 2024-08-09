@@ -11,8 +11,10 @@ import { XpathSearchComponent } from '../pages/xpath-search/xpath-search.compone
 import { MultiWordExpressionsComponent } from '../pages/multi-word-expressions/multi-word-expressions.component';
 import { ExampleBasedSearchComponent } from '../pages/example-based-search/example-based-search.component';
 import { ExternalTreeVisualizerComponent } from '../components/tree-visualizer/external-tree-visualizer.component';
+import { UploadComponent } from '../pages/upload/upload.component';
 
-
+// Take care these routes do not conflict with the django Api routes.
+// As both are mounted on '/'.
 const routes: Routes = [
     {
         path: 'home',
@@ -41,6 +43,10 @@ const routes: Routes = [
     {
         path: 'tree',
         component: ExternalTreeVisualizerComponent,
+    },
+    {
+        path: 'upload-treebank',
+        component: UploadComponent,
     },
     {
         path: '',

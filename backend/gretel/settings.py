@@ -161,6 +161,9 @@ LOGGING = {
     },
 }
 
+# We need to have uploads written to disk in order to unzip them using patool.
+FILE_UPLOAD_MAX_MEMORY_SIZE = 0
+
 # Celery settings
 CELERY_BROKER_URL = 'redis://' + os.getenv('REDIS_HOST', 'localhost')
 CELERY_RESULT_BACKEND = 'redis://' + os.getenv('REDIS_HOST', 'localhost')

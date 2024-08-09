@@ -12,4 +12,5 @@ celery[redis]>=5.2.0
 mwe-query>=0.0.5
 urllib3<=2.0.0
 psycopg2
+patool>=2.3.0
 django-allauth>=64.0.0,<65
