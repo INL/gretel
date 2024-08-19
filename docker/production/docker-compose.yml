@@ -11,6 +11,7 @@ services:
       target: frontend
     ports: 
       - 80:80
+    restart: unless-stopped
 
   backend:
     profiles: 
@@ -38,6 +39,7 @@ services:
     command: bash -c "
       python manage.py migrate && 
       python manage.py runserver 0.0.0.0:8000 --pythonpath .."
+    restart: unless-stopped
 
 
   backend-dev:
@@ -64,6 +66,7 @@ services:
     command: bash -c "
       python manage.py migrate && 
       python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --pythonpath .."
+    restart: unless-stopped
 
   celery: 
     profiles: 
@@ -87,6 +90,7 @@ services:
       - gretel-uploads:/app/backend/uploaded_treebanks/
       - gretel-results-cache:/app/backend/query_result_cache/
     command: bash -c "python -m celery -A gretel.celery worker -l info"
+    restart: unless-stopped
 
   celery-dev: 
     profiles: 
@@ -108,6 +112,7 @@ services:
     ports: 
       - 5679:5679
     command: bash -c "python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5679 -m celery -A gretel.celery worker -l info -P solo"
+    restart: unless-stopped
 
   alpino:
     container_name: gretel-alpino
@@ -121,6 +126,7 @@ services:
   redis:
     container_name: gretel-redis
     image: redis:7-alpine
+    restart: unless-stopped
 
   basex: 
     container_name: gretel-basex
@@ -128,6 +134,7 @@ services:
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile.basex
+    restart: unless-stopped
 
 volumes: 
   gretel-database:
