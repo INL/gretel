@@ -15,15 +15,21 @@ import { HttpClientMock } from './mocks/http-client.mock';
 
 import {
     ConfigurationService,
-    UploadedTreebankResponse,
-    ConfiguredTreebanksResponse,
+    // UploadedTreebankResponse,
+    // ConfiguredTreebanksResponse,
     StateService,
     TreebankService,
-    NotificationService
+    NotificationService,
+    DjangoTreebankResponse,
+    DjangoTreebankMetadataResponse,
+    DjangoComponentsForTreebankResponse
 } from './services/_index';
 import { ConfigurationServiceMock } from './services/configuration.service.mock';
 import { GlobalState } from './pages/multi-step-page/steps';
 import { TreebankSelection } from './treebank';
+
+
+const cast = <T>(p: T) => p
 
 export function commonTestBed() {
     const httpClientMock = new HttpClientMock();
@@ -56,56 +62,58 @@ export function commonTestBed() {
             useClass: Title
         });
 
-    // common mock data
-    httpClientMock.setData('get', '/gretel-upload/index.php/api/treebank', [] as UploadedTreebankResponse[]);
+    httpClientMock.setData('get', '/treebanks/treebank', cast<DjangoTreebankResponse[]>([{
+        title: 'test title',
+        description: 'test treebank',
+        groups: [{
+            slug: 'test-group',
+            description: 'test group description'
+        }],
+        variants: ['v1', 'v2'],
+        slug: 'test-slug',
+        url_more_info: ''
+        }])
+    );
 
-    httpClientMock.setData('get', '/gretel/api/src/router.php/configured_treebanks', {
-        'test-treebank': {
-            title: 'test title',
-            metadata: [],
-            description: 'test treebank',
-            variants: {
-                'v1': { display: 'v1' },
-                'v2': { display: 'v2' }
-            },
-            groups: {
-                'test-group': {
-                    description: 'test group description'
-                }
-            },
-            components: {
-                'test-component1': {
-                    description: '',
-                    // Omitted on purpose
-                    // disabled: false,
-                    group: 'test-group',
-                    id: 'test-component1',
-                    sentences: 10,
-                    words: 100,
-                    title: '',
-                    variant: 'v1',
-                },
-                'test-component2': {
-                    id: 'test-component2',
-                    title: '',
-                    description: '',
-                    sentences: 20,
-                    words: 200,
-                    group: 'test-group',
-                    variant: 'v2',
-                    disabled: true
-                }
-            }
-        }
-    } as ConfiguredTreebanksResponse);
+    httpClientMock.setData('get', '/treebanks/treebank/test-slug/metadata', cast<DjangoTreebankMetadataResponse[]>([{
+        facet: 'range',
+        field: 'test-field',
+        max_value: '10',
+        min_value: '1',
+        type: 'int'
+    }, {
+        facet: 'checkbox',
+        field: 'test-field2',
+        max_value: '',
+        min_value: '',
+        type: 'text',
+    }]))
 
-    httpClientMock.setData('post', '/gretel/api/src/router.php/treebank_counts', (body: any) => {
-        return { 'TEST_DATABASE1_COMPONENT1': '42' };
-    });
+    httpClientMock.setData('get', '/treebanks/treebank/test-slug/components', cast<DjangoComponentsForTreebankResponse[]>([{
+        description: '',
+        nr_sentences: 10,
+        nr_words: 100,
+        slug: 'test-component1',
+        title: 'Test component 1',
+        variant: 'v1',
+        group: 'test-group'
+    }, {
+        description: '',
+        nr_sentences: 20,
+        nr_words: 200,
+        slug: 'test-component2',
+        title: 'Test component 2',
+        variant: 'v2',
+        group: 'test-group'
+    }]));
 
-    httpClientMock.setData('post', '/gretel/api/src/router.php/results', (body: any) => {
-        return false;
-    });
+    // httpClientMock.setData('post', '/gretel/api/src/router.php/treebank_counts', (body: any) => {
+    //     return { 'TEST_DATABASE1_COMPONENT1': '42' };
+    // });
+
+    // httpClientMock.setData('post', '/gretel/api/src/router.php/results', (body: any) => {
+    //     return false;
+    // });
 
     return {
         testingModule: TestBed.configureTestingModule({

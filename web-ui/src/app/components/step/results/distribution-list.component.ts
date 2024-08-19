@@ -16,9 +16,10 @@ import { faDownload } from '@fortawesome/free-solid-svg-icons';
 import { Subscription } from 'rxjs';
 import { map, switchMap, distinctUntilChanged } from 'rxjs/operators';
 
-import { DownloadService, ResultCount, StateService } from '../../../services/_index';
-import { Treebank, TreebankComponent, TreebankSelection, FuzzyNumber } from '../../../treebank';
+import { DownloadService, ResultCount, StateService, TreebankService } from '../../../services/_index';
+import { Treebank, TreebankComponent, TreebankSelection, FuzzyNumber, TreebankLoaded } from '../../../treebank';
 import { GlobalState } from '../../../pages/multi-step-page/steps';
+import { SelectTreebankProvidersComponent } from '../select-treebanks/select-treebank-providers.component';
 
 interface ComponentState {
     title: string;
@@ -94,7 +95,9 @@ export class DistributionListComponent implements OnInit, OnDestroy, OnChanges {
 
     constructor(
         private downloadService: DownloadService,
-        private stateService: StateService<GlobalState>) {
+        private stateService: StateService<GlobalState>,
+        private treebankService: TreebankService
+    ) {
     }
 
     ngOnInit() {
@@ -205,7 +208,7 @@ export class DistributionListComponent implements OnInit, OnDestroy, OnChanges {
 
     private recreateState(entries: Array<{ bank: Treebank, components: TreebankComponent[] }>) {
         this.state = {};
-        const totalSentenceCount = new FuzzyNumber(0);
+        const totalSentenceCount = new FuzzyNumber();
 
         entries.forEach(({ bank, components }) => {
             const p = this.state[bank.provider] =
@@ -223,7 +226,7 @@ export class DistributionListComponent implements OnInit, OnDestroy, OnChanges {
                         .reduce((count, comp) => {
                             count.add(comp.sentenceCount);
                             return count;
-                        }, new FuzzyNumber(0))
+                        }, new FuzzyNumber())
                         .toLocaleString()
                 };
 
@@ -248,18 +251,17 @@ export class DistributionListComponent implements OnInit, OnDestroy, OnChanges {
 
     /** Return a more easily usable set of all selected treebanks/components */
     private async getComponents(selection: TreebankSelection): Promise<{
-        bank: Treebank,
+        bank: TreebankLoaded,
         components: TreebankComponent[]
     }[]> {
-        const selectedCorpora = selection.corpora.map(corpus => corpus.corpus);
-        return Promise.all(selectedCorpora.map(async (selectedCorpus) => {
-            const treebank = await selectedCorpus.treebank;
-            const components = await treebank.details.components();
+        const promises = selection.selectedTreebanks.map(async ({treebank, selectedComponents}) => {
+            const loadedTreebank = await this.treebankService.getLoadedTreebank(treebank.provider, treebank.id);
             return {
-                bank: treebank,
-                components: selectedCorpus.components.map(c => components[c])
-            };
-        }));
+                bank: loadedTreebank,
+                components: selectedComponents.map(c => loadedTreebank.components[c])
+            }
+        })
+        return Promise.all(promises);
     }
 
     public toggleComponent(provider: string, corpus: string, componentId: string, hidden: boolean) {

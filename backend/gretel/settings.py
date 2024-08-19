@@ -125,6 +125,16 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 
+REST_FRAMEWORK = {
+    # NOTE: this doesn't mean the user needs to be authenticated, 
+    # just that the user is authenticated based on these input
+    # If you want to require authentication, use @permission_classes([IsAuthenticated]) on the view
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.TokenAuthentication',
+    ]
+}
+
 # Internationalization
 # https://docs.djangoproject.com/en/4.0/topics/i18n/
 

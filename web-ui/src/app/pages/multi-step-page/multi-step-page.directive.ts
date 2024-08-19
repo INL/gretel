@@ -81,9 +81,11 @@ export abstract class MultiStepPageDirective<T extends GlobalState> implements O
     };
 
     protected decodeGlobalStateCommon(queryParams: { [key: string]: any }) {
+        
+        const treebankService: TreebankService = this.treebankService;
         return {
             selectedTreebanks: new TreebankSelection(
-                this.treebankService,
+                treebankService,
                 queryParams.selectedTreebanks ? JSON.parse(queryParams.selectedTreebanks) : undefined),
             retrieveContext: this.decodeBool(queryParams.retrieveContext),
             variableProperties: queryParams.varProps ? JSON.parse(queryParams.varProps) : undefined

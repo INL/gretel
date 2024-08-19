@@ -1,5 +1,7 @@
 from django.test import TestCase
 
+from upload.models import TreebankUpload
+
 from .models import Treebank, Component, BaseXDB
 
 

@@ -1,13 +1,15 @@
 import { Injectable } from '@angular/core';
 import { StateService } from './state.service';
-import { TreebankService } from './treebank.service';
 import { GlobalState, StepType } from '../pages/multi-step-page/steps';
-import { Treebank, TreebankDetails, CorpusSelection, TreebankSelection } from '../treebank';
+import { Treebank, CorpusSelection, TreebankSelection, TreebankLoaded, TreebankStub, TreebankVariant, TreebankComponent, ComponentGroup } from '../treebank';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
+import { TreebankService } from './treebank.service';
 
-type DetailLookup<T extends keyof TreebankDetails> = Pick<TreebankDetails, T>;
-
+/** 
+ * Doesn't hold any state directly. 
+ * Instead proxies the global state of the StateService and provides methods to update the state.
+ */
 @Injectable({
     providedIn: 'root'
 })
@@ -16,35 +18,24 @@ export class TreebankSelectionService {
         return this.stateService.state$.pipe(map(state => state.selectedTreebanks));
     }
 
-    constructor(private treebankService: TreebankService, private stateService: StateService<GlobalState>) {
+    getSelectionForTreebank$(treebank: Treebank): Observable<CorpusSelection> {
+        return this.stateService.state$.pipe(
+            map(state => state.selectedTreebanks.getTreebank(treebank))
+        )
+    }
+
+    constructor(private stateService: StateService<GlobalState>, private treebankService: TreebankService) {
     }
 
     /**
      * Set the selected state for this bank, or toggle it if no new state is provided.
      *
-     * @param provider
-     * @param corpus
+     * @param _treebank
      * @param selected
      */
-    async toggleCorpus(provider: string, corpus: string, selected?: boolean) {
+    async toggleCorpus(_treebank: Treebank, selected?: boolean) {
         // select all the components if a treebank is selected for the first time
-        let selectComponents = false;
-        await this.updateTreebankState(provider, corpus, [],
-            (_, state) => {
-                selectComponents = (!state || !Object.keys(state.components).length) &&
-                    (selected === undefined || selected);
-                if (!state) {
-                    return {
-                        components: {},
-                        selected: selected === undefined || selected
-                    };
-                }
-                state.selected = selected === undefined ? !state.selected : selected;
-                return state;
-            });
-        if (selectComponents) {
-            return this.toggleComponents(provider, corpus, true);
-        }
+        this.toggleComponents(_treebank, selected);
     }
 
     /**
@@ -52,47 +43,26 @@ export class TreebankSelectionService {
      * Other components are untouched, unless the bank does not support multiOption.
      * If no components are selected after toggling, the bank itself is also deselected.
      *
-     * @param provider
-     * @param corpus
+     * @param _treebank
+     * @param componentId
      * @param selected
      */
-    async toggleComponent(provider: string, corpus: string, componentId: string, selected?: boolean) {
-        this.updateTreebankState(provider, corpus, ['components'],
-            (treebank, state, details) => {
-                selected = selected != null ? selected : !state.components[componentId];
-                let anySelected = false;
-                Object.values(details.components).forEach(c => {
-                    if (c.id === componentId) {
-                        state.components[c.id] = selected;
-                    } else if (!treebank.multiOption) {
-                        state.components[c.id] = false;
-                    }
-
-                    anySelected = anySelected || state.components[c.id];
-                });
-
-                state.selected = anySelected;
-                return state;
-            },
-            (details) => details.components[componentId] && !details.components[componentId].disabled);
+    async toggleComponent(_treebank: Treebank, component: TreebankComponent, selected?: boolean) {
+        this.updateTreebankState(_treebank, (state, treebank) => 
+            this.updateComponents(state, treebank, selected, [component])
+        );
     }
 
-    async toggleComponents(provider: string, corpus: string, selected?: boolean) {
-        this.updateTreebankState(provider, corpus, ['components'],
-            (treebank, state, details) => {
-                const enabledComponents = Object.values(details.components).filter(c => !c.disabled);
-                selected = selected != null
-                    ? selected
-                    : !enabledComponents.every(c => state.components[c.id]);
-                Object.values(enabledComponents).forEach(c => state.components[c.id] = selected);
-                if (!treebank.multiOption) {
-                    // select only one component
-                    enabledComponents.slice(1).forEach(c => state.components[c.id] = false);
-                }
-
-                state.selected = selected;
-                return state;
-            });
+    /** 
+     * Toggle all components (and the treebank itself).
+     * @param _treebank
+     * 
+     * @param selected
+     */
+    async toggleComponents(_treebank: Treebank, selected?: boolean) {
+        this.updateTreebankState(_treebank, (state, treebank) => 
+            this.updateComponents(state, treebank, selected, Object.values(treebank.components))
+        );
     }
 
     /**
@@ -104,91 +74,64 @@ export class TreebankSelectionService {
      * @param corpus
      * @param selected
      */
-    async toggleComponentGroup(provider: string, corpus: string, groupKey: string, selected?: boolean) {
-        this.updateTreebankState(provider, corpus, ['components', 'componentGroups'],
-            (treebank, state, details) => {
-                const group = details.componentGroups.find(g => g.key === groupKey);
-                const groupComponents = Object.values(group.components).filter(id => !details.components[id].disabled);
-                selected = selected != null
-                    ? selected
-                    : !groupComponents.every(id => state.components[id]);
-                groupComponents.forEach(id => state.components[id] = selected);
-
-                // keep only the first one in the group
-                if (selected && !treebank.multiOption) {
-                    groupComponents.slice(1).forEach(id => state.components[id] = false);
-                }
-
-                state.selected = Object.values(details.components).some(c => state.components[c.id]);
-                return state;
-            },
-            (details) => !!details.componentGroups.find(g => g.key === groupKey));
+    async toggleComponentGroup(_treebank: Treebank, group: ComponentGroup, selected?: boolean) {
+        this.updateTreebankState(_treebank, (state, treebank) => 
+            this.updateComponents(state, treebank, selected, group.components)
+        );
     }
 
-    async toggleVariant(provider: string, corpus: string, variant: string, selected?: boolean) {
-        this.updateTreebankState(provider, corpus, ['components', 'componentGroups', 'variants'],
-            (treebank, state, details) => {
-                const variantComponents = details.componentGroups.map(g => g.components[variant])
-                    .filter(id => !details.components[id].disabled);
-                selected = selected != null
-                    ? selected
-                    : !variantComponents.every(id => state.components[id]);
-                variantComponents.forEach(id => state.components[id] = selected);
-                if (selected && !treebank.multiOption) {
-                    variantComponents.slice(1).forEach(id => state.components[id] = false);
-                }
-
-                state.selected = Object.values(details.components).some(c => state.components[c.id]);
-                return state;
-            },
-            (details) => {
-                return details.variants.includes(variant);
-            });
+    async toggleVariant(_treebank: Treebank, variant: TreebankVariant, selected?: boolean) {
+        await this.updateTreebankState(_treebank, (state, treebank) => 
+            this.updateComponents(state, treebank, selected, variant.components)
+        );
     }
 
-    private async updateTreebankState<T extends keyof TreebankDetails>(
-        provider: string,
-        corpus: string,
-        details: T[],
-        updateState: (
-            treebank: Treebank,
-            treebankState: CorpusSelection,
-            detailLookup: DetailLookup<T>) => CorpusSelection,
-        condition?: (detailLookup: DetailLookup<T>) => boolean) {
-        const treebank = await this.treebankService.get(provider, corpus);
-        if (!treebank) { return; }
-
-        const detailPromises: Promise<any>[] = details.map(key => treebank.details[key]());
-        const resolvedDetails = await Promise.all(detailPromises);
-        const detailLookup = details.reduce(
-            (prev, curr, index) => ({
-                ...prev,
-                [curr]: resolvedDetails[index]
-            }), {}) as DetailLookup<T>;
-
-        if (condition && !condition(detailLookup)) {
-            return;
+    private updateComponents(state: CorpusSelection, treebank: TreebankLoaded, selected: boolean | undefined, components: Array<TreebankComponent|undefined>, ) {
+        const existingComponents = components.filter(c => c && !c.disabled).map(c => c!.id);
+        // If no explicit state is given, invert selection as a whole, if currently mixed, select all
+        const newState = selected ?? !existingComponents.every(c => state.components[c]);
+        // Update components
+        existingComponents.forEach(id => state.components[id] = newState);
+        // Deselect all except the first if multiOption is not enabled for this treebank
+        if (newState && !treebank.multiOption) {
+            existingComponents.slice(1).forEach(id => state.components[id] = false);
         }
+        // Finally update the selection of the treebank itself.
+        state.selected = existingComponents.some(id => state.components[id]);
+    }
 
-        this.stateService.updateState(
-            (state) => {
-                const { selectedTreebanks } = state;
-                const updated = selectedTreebanks.clone();
-                if (!updated.data[provider]) {
-                    updated.data[provider] = {};
+    /** 
+     * Make sure the treebank is loaded and the state has an entry for the treebank.
+     * Then run the callback with the current state and the loaded treebank.
+     * Finally update the global state after the callback has done its work.
+     * 
+     * @returns a promise that resolves once the state update is done, which might be in the future.
+     */
+    private async updateTreebankState(
+        _treebank: Treebank,
+        updateState: (treebankState: CorpusSelection, loadedTreebank: TreebankLoaded) => void
+    ) {
+        return this.treebankService
+        .loadTreebank(_treebank)
+        .then(treebank => new Promise<void>((resolve, _) => {
+            this.stateService.updateState(globalState => {
+                // Create a clone of the current state in the global object
+                const newState = globalState.selectedTreebanks = globalState.selectedTreebanks.clone();
+                // Mutate the specific treebank in the new state in place.
+                updateState(newState.getTreebank(treebank), treebank);
+                if (globalState.currentStep.type === StepType.SelectTreebanks) {
+                    globalState.valid = newState.hasAnySelection();
                 }
-                const existing = updated.data[provider][corpus];
-                updated.data[provider][corpus] = updateState(
-                    treebank,
-                    existing
-                        ? { components: { ...existing.components }, selected: existing.selected }
-                        : { components: {}, selected: false },
-                    detailLookup);
-
-                state.selectedTreebanks = updated;
-                if (state.currentStep.type === StepType.SelectTreebanks) {
-                    state.valid = updated.hasAnySelection();
-                }
+                resolve();
             });
+        }))
+    }
+
+    /** 
+     * Get the selections for this treebank, or return a default initial object. 
+     * Initial object is not placed in the state by this function
+     */
+    private getStateForTreebank(state: TreebankSelection, treebank: TreebankLoaded): CorpusSelection {
+        return state.data[treebank.provider]?.[treebank.id] || {components: {}, selected: false};
     }
 }

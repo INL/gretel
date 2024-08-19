@@ -5,13 +5,16 @@ from .serializers import (
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-
+from django.db.models import Q
 
 @api_view(['GET'])
 def treebank_view(request):
     # TODO: make sure that non-public treesets are hidden if needed
+    # This is purely backwards compatibility, as the uploads now no longer start with GRETEL-UPLOAD-
     treebanks = Treebank.objects.all() \
-        .exclude(slug__startswith='GRETEL-UPLOAD-')
+        .exclude(slug__startswith='GRETEL-UPLOAD-') \
+        .exclude(~Q(upload__uploaded_by=request.user), upload__public=False)
+
     serializer = TreebankSerializer(treebanks, many=True)
     return Response(serializer.data)
 

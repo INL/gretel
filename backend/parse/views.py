@@ -14,7 +14,6 @@ from services.alpino import alpino, AlpinoError
 
 
 @api_view(['POST'])
-@authentication_classes([BasicAuthentication])
 @renderer_classes([JSONRenderer, BrowsableAPIRenderer])
 @parser_classes([JSONParser])
 def parse_view(request):
@@ -39,7 +38,6 @@ def parse_view(request):
 
 
 @api_view(['POST'])
-@authentication_classes([BasicAuthentication])
 @renderer_classes([JSONRenderer, BrowsableAPIRenderer])
 @parser_classes([JSONParser])
 def generate_xpath_view(request):

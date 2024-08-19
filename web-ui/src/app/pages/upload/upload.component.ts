@@ -12,17 +12,22 @@ export class UploadComponent {
     treebankHelpUrl = '';
     format = '';
     isPublic = false;
-        
+    
     file: File = null;
 
     warning = '';
     isUploading = false;
     uploadProgress = 0;
 
+    uploads: any[] = [];
+    error: string|null = null;
+
     constructor(
         private notificationService: NotificationService,
         private uploadService: UploadService
-    ) {}
+    ) {
+        this.uploadService.get_uploads().then(u => this.uploads = u, e => this.error = e)
+    }
 
     selectFile(event: Event) {
         this.file = (event.target as HTMLInputElement).files[0];

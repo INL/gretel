@@ -28,7 +28,8 @@
             "@angular/": [
                 "./node_modules/@angular/"
             ]
-        }
+        },
+        "strict": false,
     },
     "angularCompilerOptions": {
         "enableI18nLegacyMessageIdFormat": false,

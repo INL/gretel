@@ -21,4 +21,8 @@
     
     <p-progressBar *ngIf="isUploading" [value]="uploadProgress"></p-progressBar>
     <div *ngIf="warning" class="notification is-danger break-word">{{warning}}</div>
+
+    <div *ngFor="let upload of uploads">
+        {{upload}}
+    </div>
 </div>

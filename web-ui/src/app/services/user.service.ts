@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { BehaviorSubject, catchError, map, of, OperatorFunction } from 'rxjs';
+import { BehaviorSubject, catchError, firstValueFrom, map, of, OperatorFunction } from 'rxjs';
 import { ConfigurationService } from './configuration.service';
 import { NotificationService } from './notification.service';
 
@@ -65,8 +65,8 @@ type ReturnBinder<T> = {
     providedIn: 'root'
 })
 export class UserService {
-    private _user$ = new BehaviorSubject<User>(undefined);
-    private _token$ = new BehaviorSubject<LoginResponse['meta']>(undefined);
+    private _user$ = new BehaviorSubject<User|undefined>(undefined);
+    private _token$ = new BehaviorSubject<LoginResponse['meta']|undefined>(undefined);
 
     constructor(
         private http: HttpClient,
@@ -140,7 +140,7 @@ export class UserService {
 
     /** Get the current signin status. Uses the browser session to retrieve info. */
     private async get_status(): Promise<boolean> {
-        return this.http.get<LoginResponse>(await this.configurationService.getDjangoUrl(urls.get_status))
+        const r = this.http.get<LoginResponse>(await this.configurationService.getDjangoUrl(urls.get_status))
             .pipe(this.handleResponse({
                 200: status => {
                     this._user$.next(status.data.user);
@@ -149,12 +149,13 @@ export class UserService {
                 },
                 401: true,
                 default: 'Unknown error'
-            }))
-            .toPromise()
+            }));
+
+        return firstValueFrom(r);
     }
 
     public async login(email: string, password: string): Promise<boolean> {
-        return this.http.post<LoginResponse>(await this.configurationService.getDjangoUrl(urls.login), {email, password})
+        const r = this.http.post<LoginResponse>(await this.configurationService.getDjangoUrl(urls.login), {email, password})
             .pipe(this.handleResponse({
                 200: status => {
                     this._user$.next(status.data.user);
@@ -162,26 +163,26 @@ export class UserService {
                     return true;
                 },
                 401: 'Invalid login',
-                default: (r: ErrorResponse) => r.errors?.map(e => e.message).join(', '),
-            }))
-            .toPromise()
+                default: (r: ErrorResponse) => r.errors?.map(e => e.message).join(', ') ?? 'Unknown error',
+            }));
+        return firstValueFrom(r);
     }
 
     public async logout(): Promise<boolean> {
-        return this.http.delete(await this.configurationService.getDjangoUrl(urls.logout))
-            .pipe(this.handleResponse({
+        const r = this.http.delete(await this.configurationService.getDjangoUrl(urls.logout))
+            .pipe(this.handleResponse<any>({
                 401: r => { // returns 401 when logged out...
                     this._user$.next(undefined);
                     this._token$.next(undefined);
                     return true; 
                 },
                 default: 'Unknown error'
-            }))
-            .toPromise()
+            }));
+        return firstValueFrom(r);
     }
 
     public async signup(username: string, email: string, password: string): Promise<boolean> {
-        return this.http.post<LoginResponse>(await this.configurationService.getDjangoUrl(urls.signup), {username, email, password})
+        const r = this.http.post<LoginResponse>(await this.configurationService.getDjangoUrl(urls.signup), {username, email, password})
             .pipe(this.handleResponse({
                 200: r => {
                     this._user$.next(r.data.user);
@@ -198,12 +199,12 @@ export class UserService {
                 409: 'Email or username already in use',
 
                 default: (e: ErrorResponse) => e.errors?.map(e => e.message).join(', ') ?? 'Unknown error'
-            }))
-            .toPromise()
+            }));
+        return firstValueFrom(r);
     }
 
     public async verify_email(key: string): Promise<boolean> {
-        return this.http.post<LoginResponse>(await this.configurationService.getDjangoUrl(urls.verify_email), {key})
+        const r = this.http.post<LoginResponse>(await this.configurationService.getDjangoUrl(urls.verify_email), {key})
         .pipe(this.handleResponse({
             200: r => {
                 this._token$.next(r.meta);
@@ -213,11 +214,11 @@ export class UserService {
             },
             default: (e: ErrorResponse) => e.errors?.map(e => e.message).join(', ') ?? 'Unknown error'
         }))
-        .toPromise();
+        return firstValueFrom(r);
     }
 
     public async password_reset_request(email: string): Promise<boolean> {
-        return this.http.post<BaseResponse>(await this.configurationService.getDjangoUrl(urls.password_reset_request), {email})
+        const r = this.http.post<BaseResponse>(await this.configurationService.getDjangoUrl(urls.password_reset_request), {email})
             .pipe(this.handleResponse({
                 200: r => {
                     this.notificationService.add('Password reset email sent. Check your email for instructions.', 'success');
@@ -225,11 +226,11 @@ export class UserService {
                 },
                 default: (e: ErrorResponse) => e.errors?.map(e => e.message).join(', ') ?? 'Unknown error'
             }))
-            .toPromise();
+        return firstValueFrom(r);
     }
 
     public async password_reset(key: string, newPassword: string): Promise<boolean> {
-        return this.http.post<LoginResponse>(await this.configurationService.getDjangoUrl(urls.password_reset), {key, password: newPassword})
+        const r = this.http.post<LoginResponse>(await this.configurationService.getDjangoUrl(urls.password_reset), {key, password: newPassword})
             .pipe(this.handleResponse({
                 200: r => {
                     this._token$.next(r.meta);
@@ -243,6 +244,6 @@ export class UserService {
                 },
                 default: (e: ErrorResponse) => e.errors?.map(e => e.message).join(', ') ?? 'Unknown error'
             }))
-            .toPromise()
+        return firstValueFrom(r);
     }
 }
