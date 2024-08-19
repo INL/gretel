@@ -33,7 +33,7 @@ export class SelectTreebankProvidersComponent implements OnChanges, OnDestroy {
 
     selectionText: string;
 
-    user: User;
+    user?: User;
 
     subscriptions: Subscription[];
 
@@ -84,7 +84,7 @@ export class SelectTreebankProvidersComponent implements OnChanges, OnDestroy {
         }
     }
 
-    togglePreConfigured(set: boolean = undefined) {
+    togglePreConfigured(set?: boolean) {
         if (set == undefined || set !== this.preConfigured) {
             this.preConfiguredChange.emit(set == undefined ? !this.preConfigured : set);
         }
@@ -98,7 +98,7 @@ export class SelectTreebankProvidersComponent implements OnChanges, OnDestroy {
         } else {
             this.onlyMine = true;
             this.togglePreConfigured(false);
-            this.selectedUserIdsChange.emit([this.user.id]);
+            this.selectedUserIdsChange.emit([this.user!.id]);
         }
     }
 

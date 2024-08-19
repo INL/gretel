@@ -3,7 +3,7 @@
 import { Component, Input, OnDestroy, OnInit, NgZone, Output, EventEmitter, HostListener } from '@angular/core';
 import { faExpand } from '@fortawesome/free-solid-svg-icons';
 import { BehaviorSubject, Subject, Subscription, combineLatest, merge } from 'rxjs';
-import { switchMap, first, finalize, debounceTime, map, distinctUntilChanged } from 'rxjs/operators';
+import { switchMap, first, finalize, debounceTime, map, distinctUntilChanged, mergeMap } from 'rxjs/operators';
 
 import * as $ from 'jquery';
 import 'jquery-ui/ui/widgets/draggable';
@@ -22,7 +22,8 @@ import {
     FilterValue,
     StateService,
     ParseService,
-    NotificationService
+    NotificationService,
+    TreebankService
 } from '../../../services/_index';
 import { FileExportRenderer } from './file-export-renderer';
 import { TreebankMetadata } from '../../../treebank';
@@ -110,6 +111,7 @@ export class AnalysisComponent extends StepDirective<GlobalState> implements OnI
         private reconstructorService: ReconstructorService,
         private resultsService: ResultsService,
         private parseService: ParseService,
+        private treebankService: TreebankService,
         private ngZone: NgZone,
         stateService: StateService<GlobalState>
     ) {
@@ -166,12 +168,12 @@ export class AnalysisComponent extends StepDirective<GlobalState> implements OnI
 
         const metadata$ = this.state$.pipe(
             map(s => s.selectedTreebanks),
-            distinctUntilChanged()).subscribe(async selectedTreebanks => {
-                const metadata: TreebankMetadata[][] = await Promise.all(
-                    selectedTreebanks.corpora.map(async corpus => (await corpus.corpus.treebank).details.metadata()));
-                this.metadata = metadata.flatMap(x => x);
-                this.metadata = [];  // TODO temporarily introduced this as long as metadata is not working
-            });
+            distinctUntilChanged((a, b) => a.equals(b)),
+            map(selectedTreebanks => selectedTreebanks.selectedTreebanks),
+            mergeMap(selectedTreebanks => this.treebankService.getLoadedTreebanks(selectedTreebanks)),
+            map(treebanks => treebanks.flatMap(treebank => treebank.metadata)),
+        )
+        .subscribe(metadata => this.metadata = metadata);
 
         const results$ = this.state$.pipe(
             debounceTime(100),
@@ -181,11 +183,11 @@ export class AnalysisComponent extends StepDirective<GlobalState> implements OnI
 
                 // fetch all results for all selected components/treebanks
                 // and merge them into a single stream that's subscribed to.
-                const searchResults = merge(...selectedTreebanks.corpora.map(corpus => this.resultsService.getAllResults(
+                const searchResults = merge(...selectedTreebanks.selectedTreebanks.map(({treebank, selectedComponents}) => this.resultsService.getAllResults(
                     this.xpath,
-                    corpus.provider,
-                    corpus.corpus.name,
-                    corpus.corpus.components,
+                    treebank.provider,
+                    treebank.id,
+                    selectedComponents,
                     false,
                     true,
                     [],

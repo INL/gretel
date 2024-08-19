@@ -1,6 +1,6 @@
 import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, NgZone } from '@angular/core';
 import { faBars, faChevronLeft, faChevronRight, faCommentDots, faCommentSlash, faFileAlt, faPrint } from '@fortawesome/free-solid-svg-icons';
-import { Subscription, Observable, combineLatest } from 'rxjs';
+import { Subscription, Observable, combineLatest, of, from } from 'rxjs';
 import {
     debounceTime,
     distinctUntilChanged,
@@ -15,6 +15,7 @@ import {
     StateService,
     MetadataValueCounts,
     ResultsService,
+    TreebankService,
 } from '../../../services/_index';
 import { GlobalState } from '../../../pages/multi-step-page/steps';
 import { Filter } from '../../../models/filter';
@@ -99,6 +100,7 @@ export class ResultsTableComponent implements OnInit, OnDestroy {
     constructor(
         ngZone: NgZone,
         private resultsService: ResultsService,
+        private treebankService: TreebankService,
         stateService: StateService<GlobalState>) {
         const state$ = stateService.state$;
 
@@ -161,10 +163,14 @@ export class ResultsTableComponent implements OnInit, OnDestroy {
 
     /** Extracts metadata fields from the selected treebanks */
     private streamTreebankMetadata(selectedTreebanks$: Observable<TreebankSelection>): Observable<TreebankMetadata[]> {
+        selectedTreebanks$
+        .pipe(
+            map(selection => selection.selectedTreebanks),
+        )
         return selectedTreebanks$.pipe(
-            switchMap(selection => Promise.all(selection.corpora.map(corpus => corpus.corpus.treebank))),
-            switchMap(treebanks => Promise.all(treebanks.map(t => t.details.metadata()))),
-            mergeMap(metadata => metadata));
+            mergeMap(selection => Promise.all(selection.selectedTreebanks.map(s => this.treebankService.getLoadedTreebank(s.treebank.provider, s.treebank.id)))),
+            mergeMap(treebanks => treebanks.map(treebank => treebank.metadata)),
+        );
     }
 
     private streamMetadataValueCounts(
@@ -181,12 +187,12 @@ export class ResultsTableComponent implements OnInit, OnDestroy {
         selectedTreebanks: TreebankSelection,
         filterValues: FilterValues
     ): Promise<MetadataValueCounts> {
-        const counts = await Promise.all(selectedTreebanks.corpora.map(({ provider, corpus }) =>
+        const counts = await Promise.all(selectedTreebanks.selectedTreebanks.map(({treebank, selectedComponents}) =>
             this.resultsService.metadataCounts(
                 xpath,
-                provider,
-                corpus.name,
-                corpus.components,
+                treebank.provider,
+                treebank.id,
+                selectedComponents,
                 Object.values(filterValues)
             ).catch((): MetadataValueCounts => {
                 return {};

@@ -1,6 +1,6 @@
 <div class="content">
     <form (ngSubmit)="upload()">
-        <label><input type="text" [(ngModel)]="treebankName"> Treebank Name</label><br>
+        <label><input type="text" [(ngModel)]="treebankName" name="name"> Treebank Name</label><br>
         
         <label><input type="file" name="file" (change)="selectFile($event)"> File</label><br>
         <label><select name="input_format" [(ngModel)]="format">
@@ -11,8 +11,8 @@
             <option value="F">FoLiA</option>
         </select></label><br>
 
-        <label><input type="text" [(ngModel)]="treebankDescription" name="treebankDescription"> Treebank description</label><br>
-        <label><input type="text" [(ngModel)]="treebankHelpUrl" name="treebankHelpUrl"> Help url</label><br>
+        <label><input type="text" [(ngModel)]="treebankDescription" name="treebankDescription" name="description"> Treebank description</label><br>
+        <label><input type="text" [(ngModel)]="treebankHelpUrl" name="treebankHelpUrl" name="help-url"> Help url</label><br>
 
         <label><input type="checkbox" [(ngModel)]="isPublic" name="public"> Public</label><br>
 
@@ -21,4 +21,8 @@
     
     <p-progressBar *ngIf="isUploading" [value]="uploadProgress"></p-progressBar>
     <div *ngIf="warning" class="notification is-danger break-word">{{warning}}</div>
+
+    <div *ngFor="let upload of uploads">
+        {{upload}}
+    </div>
 </div>

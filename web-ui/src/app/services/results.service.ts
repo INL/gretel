@@ -617,7 +617,7 @@ export interface ResultCount {
 
 export type HitWithOrigin = Hit & {
     provider: string;
-    corpus: { name: string };
+    corpus: { id: string };
     componentDisplayName: string;
 };
 

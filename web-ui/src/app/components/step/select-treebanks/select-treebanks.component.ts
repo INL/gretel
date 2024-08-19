@@ -6,21 +6,12 @@ import { Subscription } from 'rxjs';
 
 import { animations } from '../../../animations';
 import { GlobalStateExampleBased, StepType } from '../../../pages/multi-step-page/steps';
-import { Treebank, TreebankSelection } from '../../../treebank';
+import { Treebank, TreebankSelection, TreebankStub } from '../../../treebank';
 import { StateService, TreebankService, TreebankSelectionService } from '../../../services/_index';
 import { StepDirective } from '../step.directive';
+import { capitalize, upperFirst } from 'lodash';
 import { UserProvider } from './select-treebank-providers.component';
-import { comparatorGenerator } from '../../util';
 
-// bulma.io tag colors
-const colors = [
-    'primary',
-    'link',
-    'info',
-    'success',
-    'warning',
-    'danger'
-];
 
 @Component({
     animations,
@@ -34,11 +25,10 @@ export class SelectTreebanksComponent extends StepDirective<GlobalStateExampleBa
     faLock = faLock;
     faTags = faTags;
 
-    public treebanks: (Treebank & { color: string, userName: string, preConfigured: boolean, selected: boolean })[] = [];
+    public treebanks: Array<Treebank&{color: string, userName: string, preConfigured: boolean, selected: boolean}> = [];
     public loading = true;
     public stepType = StepType.SelectTreebanks;
     public selection: TreebankSelection;
-    public userProviders: UserProvider[];
     public filterText = '';
 
     public showPreConfigured = true;
@@ -52,9 +42,47 @@ export class SelectTreebanksComponent extends StepDirective<GlobalStateExampleBa
     public next = new EventEmitter();
 
     private readonly subscriptions: Subscription[];
-    private userColors: { [userId: number]: string } = {};
-    private userNames: { [userId: number]: string } = {};
-    private colorIndex = 0;
+
+    public users = new class {
+        // bulma.io tag colors
+        private colors = [
+            'primary',
+            'link',
+            'info',
+            'success',
+            'warning',
+            'danger'
+        ];
+
+        private _users = new Map<number, UserProvider>();
+        
+        public get(): UserProvider[] {
+            return Array.from(this._users.values()).sort((a, b) => a.name.localeCompare(b.name));
+        }
+
+        public getOrCreate(userId?: number, email?: string, username?: string): UserProvider {
+            if (!userId) return {color: this.colors[0], id: -1, name: 'Pre-configured'};
+            if (this._users.has(userId)) return this._users.get(userId)!;
+
+            return this._users
+                .set(userId, {
+                    id: userId,
+                    color: this.colors[this._users.size % this.colors.length],
+                    name: username || this.usernameFromEmail(email) || `Unknown user [${userId}]`
+                })
+                .get(userId)!;
+        }
+
+        /** Return supplied username, or compute a fallback from the email address. */
+        private usernameFromEmail(email?: string): string|undefined {
+            return email?.
+                split('@', 1)[0] // part before '@' (or whole string if no '@')
+                .split('.') // split on dots
+                .map(upperFirst) // capitalize every part
+                .join(' '); // spaces between 
+            // e.g. koen.mertens@... -> 'Koen Mertens'
+        }
+    }
 
     constructor(treebankService: TreebankService,
         private treebankSelectionService: TreebankSelectionService,
@@ -62,47 +90,30 @@ export class SelectTreebanksComponent extends StepDirective<GlobalStateExampleBa
         super(stateService);
 
         this.subscriptions = [
-            treebankService.treebanks.pipe(
-                map(lookup => Object.values(lookup.data).flatMap(provider => Object.values(provider))))
-                .subscribe(treebanks => {
-                    this.treebanks = treebanks.map(treebank => ({
-                        ...treebank,
-                        ...{
-                            color: this.determineUserColor(treebank.userId),
-                            userName: this.determineUserName(treebank.email, treebank.userId),
-                            preConfigured: (treebank.userId ?? null) == null
-                        },
-                        selected: this.selection && this.selection.isSelected(treebank.provider, treebank.id)
-                    })).sort((a, b) => comparatorGenerator(
-                        a,
-                        b,
-                        value => value.displayName.toUpperCase(),
-                        value => value.uploaded));
-
-                    this.userProviders = Object.entries(this.userNames).map(
-                        ([id, name]) => {
-                            let color = this.userColors[id];
-                            return {
-                                id: +id,
-                                color,
-                                name
-                            }
-                        }
-                    ).sort((a, b) => comparatorGenerator(a, b, value => value.name.toUpperCase()));
-
-                    this.showUsers = this.userProviders.map(user => user.id);
-                }),
+            treebankService.treebanks$.pipe(
+                // add extra info
+                map(tbs => tbs.map(tb => ({
+                    ...tb, 
+                    color: this.users.getOrCreate(tb.userId, tb.email).color,
+                    userName: this.users.getOrCreate(tb.userId, tb.email).name,
+                    preConfigured: (tb.userId ?? null) == null,
+                    selected: this.selection && this.selection.isSelected(tb.provider, tb.id)
+                })))
+                // sort by treebank name, then by upload date
+            )
+            .subscribe(treebanks => {
+                this.treebanks = treebanks;
+                this.showUsers = this.users.get().map(user => user.id);
+            }),
             treebankSelectionService.state$.subscribe(selection => {
                 this.selection = selection;
                 this.treebanks = this.treebanks.map(treebank => {
                     treebank.selected = selection.isSelected(treebank.provider, treebank.id);
                     return treebank;
                 });
-            })
+            }),
+            treebankService.loading$.subscribe(loading => this.loading = loading)
         ];
-
-        // this way treebanks are already shown once they have partially loaded
-        treebankService.getTreebanks().then(() => this.loading = false);
     }
 
     ngOnInit() {
@@ -114,54 +125,11 @@ export class SelectTreebanksComponent extends StepDirective<GlobalStateExampleBa
         this.subscriptions.forEach(s => s.unsubscribe());
     }
 
-    toggleTreebank(provider: string, corpus: string) {
-        this.treebankSelectionService.toggleCorpus(provider, corpus);
+    toggleTreebank(corpus: Treebank) {
+        this.treebankSelectionService.toggleCorpus(corpus);
     }
 
     public getWarningMessage() {
         return 'Please select a treebank and the components.';
-    }
-
-    private determineUserColor(userId?: number): string {
-        if (userId == undefined || userId == null) {
-            return null;
-        }
-
-        let color = this.userColors[userId];
-        if (color) {
-            return color;
-        }
-
-        color = this.userColors[userId] = colors[this.colorIndex];
-        this.colorIndex = (this.colorIndex + 1) % colors.length;
-
-        return color;
-    }
-
-    private determineUserName(email?: string, userId?: number): string {
-        if (userId == undefined || userId == null) {
-            return null;
-        }
-
-        let userName = this.userNames[userId];
-        if (userName) {
-            return userName;
-        }
-
-        const parts = email.split('@')[0].split('.');
-        userName = '';
-        for (let part of parts) {
-            if (part.length === 1) {
-                userName += part.toUpperCase();
-            } else {
-                userName += ' ' + part[0].toUpperCase() + part.substr(1);
-            }
-        }
-
-        userName = userName.trim();
-
-        this.userNames[userId] = userName;
-
-        return userName;
     }
 }

@@ -39,7 +39,6 @@ class TreebankUpload(models.Model):
     treebank = models.OneToOneField(Treebank, on_delete=models.CASCADE, blank=False, null=False, to_field='slug', primary_key=True)
     '''The treebank for this upload. Is created and destroyed together with the upload.'''
 
-    # Either of these should be set, but not both.
     input_file = models.FileField(upload_to='uploaded_treebanks/', blank=False, null=False) 
     '''File or directory to import from.'''
 
@@ -50,7 +49,7 @@ class TreebankUpload(models.Model):
     '''Whether the treebank should be publicly available.'''
 
     uploaded_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
-    '''User who uploaded the treebank.'''
+    '''User who uploaded the treebank. Can be null for treebanks uploaded through management scripts.'''
     upload_timestamp = models.DateTimeField(verbose_name='Upload date and time', null=False, blank=True,auto_now=True)
     '''When the upload was started.'''
     processed = models.DateTimeField(null=True, blank=True, editable=False)

@@ -1,5 +1,7 @@
 {
-    "providers": {
+    "legacyProviders": {
+        "PaQu": "https://paqu.let.rug.nl:8068/api/gretel/"
     },
+    "legacyUpload": "https://gretel-upload.hum.uu.nl/gretel-upload/index.php/api/treebank",
     "django": "/"
 }

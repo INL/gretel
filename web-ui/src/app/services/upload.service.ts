@@ -15,9 +15,20 @@ export class UploadStreamError {
     constructor(public message: string) {}
 }
 
+/** 403, 401 */
+export type AuthenticationError = {
+    detail: string;
+}
+
+export type DeleteUploadResponse = {
+    message?: string;
+}
+
 export type UploadResponse = {
     upload_id: number;
 }
+
+export type ListUploadResponse = any;
 
 export type UploadProgressResponse = {
     status: 'PENDING'|'PROGRESS'|'SUCCESS'|'FAILURE';
@@ -66,11 +77,11 @@ export class UploadService {
             // A client-side or network error occurred. Handle it accordingly.
             return throwError(() => new UploadStreamError('Failed to communicate with server; please try again later.'));
         } else {
-            const r: UploadProgressResponse = error.error;
+            const r: UploadProgressResponse|AuthenticationError = error.error;
             // The backend returned an unsuccessful response code.
             // error.error contains the response body.
             // TODO should probably expose more info.
-            return throwError(() => new UploadStreamError(`Failed to upload or parse file: ${r.info.error || r.info.message}`));
+            return throwError(() => new UploadStreamError(`Failed to upload or parse file: ${'info' in r ? r.info.error || r.info.message : r.detail}`));
         }
     }
 
@@ -116,7 +127,7 @@ export class UploadService {
     /**
      * Logs the user in, returns true if successful
      */
-    upload(params: {
+    public upload(params: {
         treebankName: string,
         treebankDescription: string,
         treebankDisplay: string,
@@ -157,5 +168,23 @@ export class UploadService {
             })
         )
         return upload$;
+    }
+    
+    public async get_uploads(): Promise<ListUploadResponse[]> {
+        try {
+            return this.http.get<ListUploadResponse[]>(await this.configurationService.getDjangoUrl('upload/uploads')).toPromise();
+        } catch (e) {
+            const error: AuthenticationError = (e as HttpErrorResponse).error;
+            throw new Error(error.detail);
+        }
+    }
+
+    public async delete_upload(id: string) {
+        try {
+            return this.http.delete<DeleteUploadResponse>(await this.configurationService.getDjangoUrl(`upload/${id}/`)).toPromise();
+        } catch (e) {
+            const error: AuthenticationError = (e as HttpErrorResponse).error;
+            throw new Error(error.detail);
+        }
     }
 }

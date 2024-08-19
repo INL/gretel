@@ -1,9 +1,10 @@
 import { Injectable } from '@angular/core';
-import { flatMap, materialize, map } from 'rxjs/operators';
+import { map, materialize } from 'rxjs/operators';
 
-import { FilterValue, SearchResults, ResultsService, SearchBehaviour } from './results.service';
+import { combineLatest, from, Observable, ObservableNotification, zip } from 'rxjs';
+import { TreebankLoaded, TreebankSelection } from '../treebank';
+import { FilterValue, HitWithOrigin, ResultsService, SearchBehaviour, SearchResults } from './results.service';
 import { TreebankService } from './treebank.service';
-import { TreebankSelection } from '../treebank';
 
 @Injectable({ providedIn: 'root' })
 export class ResultsStreamService {
@@ -14,15 +15,22 @@ export class ResultsStreamService {
         selection: TreebankSelection,
         filterValues: FilterValue[],
         retrieveContext: boolean,
-        behaviour?: SearchBehaviour) {
+        behaviour?: SearchBehaviour
+    ): Array<
+        Observable<{
+            result: ObservableNotification<SearchResults&{hits: HitWithOrigin[]}>, 
+            provider: string, 
+            corpus: string
+        }>
+    > {
         // create a request for each treebank
-        return selection.corpora.map(({ provider, corpus }) => {
+        return selection.selectedTreebanks.map(({treebank, selectedComponents}) => {
             // create the basic request, without error handling
-            const base = this.resultsService.getAllResults(
+            const base: Observable<SearchResults> = this.resultsService.getAllResults(
                 xpath,
-                provider,
-                corpus.name,
-                corpus.components,
+                treebank.provider,
+                treebank.id,
+                selectedComponents,
                 retrieveContext,
                 false,
                 filterValues,
@@ -30,24 +38,21 @@ export class ResultsStreamService {
                 behaviour,
             );
 
-            return base.pipe(
+            return combineLatest([base, from(this.treebankService.getLoadedTreebank(treebank.provider, treebank.id))])
+            .pipe(
                 // expand hits with the corpus and provider
                 // (so we can use this later in the interface)
                 // This mapping is skipped if the query returns an error
-                flatMap(async (result: SearchResults) => {
-                    const treebank = this.treebankService.treebanks.value.data[provider][corpus.name];
-                    const componentDetails = await treebank.details.components();
-                    return {
-                        ...result,
-                        hits: result.hits.map(hit => ({
-                            ...hit,
-                            provider,
-                            corpus,
-                            componentDisplayName: componentDetails[hit.component].title
-                        }))
-                    };
-                }),
-
+                map<[SearchResults, TreebankLoaded], SearchResults&{hits: HitWithOrigin[]}>(([results, loadedTreebank]) => ({
+                    ...results,
+                    hits: results.hits.map<HitWithOrigin>((hit) => ({
+                        ...hit,
+                        provider: treebank.provider,
+                        corpus: treebank,
+                        componentDisplayName: loadedTreebank.components[hit.component].title,
+                    })),
+                })),
+                
                 // (This will run even if base receives an error)
                 // Capture errors and send them on as a regular events
                 // This is required because this only one stream in a set of multiple result streams
@@ -60,10 +65,10 @@ export class ResultsStreamService {
                 // that message doesn't contain that info yet, so attach it
                 map(result => ({
                     result,
-                    provider,
-                    corpus
+                    provider: treebank.provider,
+                    corpus: treebank.id,
                 })),
-            );
+            )
         });
     }
 }

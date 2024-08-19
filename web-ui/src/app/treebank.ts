@@ -1,11 +1,11 @@
+import {isEqual} from 'lodash';
+
 export class FuzzyNumber {
     public value = 0;
     public unknown = false;
-    constructor(value: number | '?') {
-        if (value === '?') {
-            this.unknown = true;
-        } else {
-            this.value = value;
+    constructor(value?: number |string | '?' | FuzzyNumber) {
+        if (value !== undefined) {
+            this.add(value);
         }
     }
 
@@ -13,14 +13,28 @@ export class FuzzyNumber {
      * Adds a value to this number and modifies this instance.
      * @param value
      */
-    public add(value: number | '?') {
-        if (value === '?') {
+    public add(value: number | string | '?' | FuzzyNumber): FuzzyNumber {
+        if (value instanceof FuzzyNumber) {
+            this.value += value.value;
+            this.unknown = this.unknown || value.unknown;
+        } else if (value === '?') {
             this.unknown = true;
-        } else {
+        } else if (typeof value === 'string') {
+            const v= parseInt(value, 10);
+            if (isNaN(v)) {
+                this.unknown = true;
+            } else {
+                this.value += v;
+            }
+        } else if (typeof value === 'number') {
             this.value += value;
+        } else {
+            // should never happen
+            this.unknown = true;
         }
+        return this;
     }
-
+    
     public toString() {
         if (this.unknown) {
             if (this.value === 0) {
@@ -46,42 +60,69 @@ export class FuzzyNumber {
     }
 }
 
-export interface Treebank {
-    /** The backend this corpus resides in */
-    provider: string;
-    /** Id of this treebank */
+type TreebankBase = {
+    provider: string; 
     id: string;
-    /**
-     * The user-friendly title to use, uploaded treebanks have the same
-     * value here as the treebank's name.
-     */
     displayName: string;
-    description?: string;
-    /** Can the user search in multiple components simultaneously for this treebank */
+    helpUrl: string;
+    description: string;
     multiOption: boolean;
-    /** Might be false for user-uploaded corpora */
     isPublic: boolean;
-
-    // The following options only exist for user-uploaded treebanks
     userId?: number;
     email?: string;
-    /** When this has been uploaded */
     uploaded?: Date;
     processed?: Date;
-
-    details: { [T in keyof TreebankDetails]: () => Promise<TreebankDetails[T] | undefined> };
 }
 
-export interface TreebankDetails {
-    metadata: TreebankMetadata[];
-    components: TreebankComponents;
-    componentGroups: ComponentGroup[];
+/** A treebank where details/contents have not been loaded yet. */
+export type TreebankStub = TreebankBase & {
+    loaded: false;
+    groups: Array<{slug: string, description: string}>
     variants: string[];
 }
 
+/** A treebank where content has loaded */
+export type TreebankLoaded = TreebankBase & {
+    loaded: true;
+    metadata: TreebankMetadata[];
+    components: Record<string, TreebankComponent>;
+    componentGroups: ComponentGroup[];
+    /** In the same order as the components array in every group. */
+    variants: TreebankVariant[];
+    wordCount: FuzzyNumber;
+    sentenceCount: FuzzyNumber;
+}
+
+/** 
+ * We don't know whether it has loaded, check the 'loaded' property.
+ * To load/wait for the contents, use the treebankService.loadTreebank() method.
+ */
+export type Treebank = TreebankStub | TreebankLoaded;
+
+export interface TreebankVariant {
+    id: string;
+    sentenceCount: FuzzyNumber;
+    wordCount: FuzzyNumber;
+    /** 
+     * Contains one component for every group in the treebank.
+     * Might contain undefined when the variant doesn't have a component for a certain group.
+     */
+    components: Array<TreebankComponent|undefined>;
+}
+
+/** 
+ * A group represents a few components that are a "variant" of the same data.
+ * For example different languages for the same texts.
+ * See groups and variants as a 2d table,
+ * where groups are the rows and variants are the columns.
+ */
 export interface ComponentGroup {
-    key: string;
-    components: { [variant: string]: string };
+    id: string;
+    /** 
+     * Contains one component for every variant in the treebank.
+     * Might contain undefined when the group doesn't have a component for a certain variant.
+     */
+    components: Array<TreebankComponent|undefined>;
     description?: string;
     sentenceCount: FuzzyNumber;
     wordCount: FuzzyNumber;
@@ -95,8 +136,8 @@ export interface TreebankComponent {
     id: string;
     /** Friendly name */
     title: string;
-    sentenceCount: number | '?';
-    wordCount: number | '?';
+    sentenceCount: FuzzyNumber;
+    wordCount: FuzzyNumber;
     description: string;
     disabled: boolean;
 
@@ -104,10 +145,6 @@ export interface TreebankComponent {
     group?: string;
     /** The Variant */
     variant?: string;
-}
-
-export interface TreebankComponents {
-    [id: string]: TreebankComponent;
 }
 
 export interface TreebankMetadata {
@@ -119,157 +156,128 @@ export interface TreebankMetadata {
     maxValue?: number | Date;
 }
 
+export type EncodedTreebankSelection = {
+    [provider: string]: { [treebank: string]: string[] } 
+}
+
+type LegacyEncodedTreebankSelection = {
+    corpus: string;
+    components: string[];
+}
+function isLegacy(selection: EncodedTreebankSelection|LegacyEncodedTreebankSelection): selection is LegacyEncodedTreebankSelection {
+    return typeof selection.corpus === 'string' && Array.isArray(selection.components);
+}
+
+/** 
+ * Part of the global state object (state.service). 
+ * Provides interop between the state object and the url (though doesn't do any updating itself.)
+ */
 export class TreebankSelection {
-    /**
-     * Gets all the selected corpora
-     */
-    get corpora() {
-        return this.providers
-            .flatMap((provider) => provider.corpora.map(corpus => ({ provider: provider.name, corpus })));
-    }
-
-    /**
-     * Gets all the selected providers
-     */
-    get providers() {
-        return Object.entries(this.data)
-            .map(([provider, data]) => {
-                return {
-                    name: provider,
-                    corpora: Object.entries(data)
-                        .filter(([corpus, selection]) => selection.selected)
-                        .map(([corpus, selection]) => {
-                            const components = selection.components;
-                            return {
-                                name: corpus,
-                                components: Object.entries(components)
-                                    .filter(([component, selected]) => selected)
-                                    .map(([component, selected]) => component),
-                                treebank: this.treebankService.get(provider, corpus)
-                            };
-                        })
-                };
-            });
-    }
-
     data: TreebankSelectionData;
 
-    encode() {
-        const encoded: { [provider: string]: { [corpus: string]: string[] } } = {};
-        let any = false;
+    /** Get the current selection state for this treebank, creating it if there is currently no entry. */
+    getTreebank(treebank: Pick<Treebank, 'provider'|'id'>): CorpusSelection {
+        const provider = this.data[treebank.provider];
+        if (!provider) {
+            this.data[treebank.provider] = {};
+        }
+        const providerData = this.data[treebank.provider];
+        if (!providerData[treebank.id]) {
+            providerData[treebank.id] = { selected: false, components: {} };
+        }
+        return providerData[treebank.id];
+    }
+
+    /**
+     * Return all selected treebanks and their components.
+     * Returned treebanks are guaranteed to have at least one selected component.
+     */
+    get selectedTreebanks(): Array<{treebank: Treebank, selectedComponents: string[]}> {
+        const r = [];
         for (const [provider, corpora] of Object.entries(this.data)) {
-            for (const [corpus, selection] of Object.entries(corpora)) {
-                if (selection.selected) {
-                    for (const [component, selected] of Object.entries(selection.components)) {
-                        if (selected) {
-                            const providerCorpora = encoded[provider] || (encoded[provider] = {});
-                            const components = providerCorpora[corpus] || (providerCorpora[corpus] = []);
-                            components.push(component);
-                            any = true;
-                        }
-                    }
+            for (const [corpus, {selected: treebankSelected, components}] of Object.entries(corpora)) {
+                if (!treebankSelected) continue;
+                const selectedComponents = Object.keys(components).filter(component => components[component]);
+                if (selectedComponents.length) {
+                    r.push({
+                        treebank: this.treebankService.get(provider, corpus),
+                        selectedComponents
+                    });
                 }
             }
         }
+        r.sort((a, b) => a.treebank.displayName.localeCompare(b.treebank.displayName));
+        r.forEach(({selectedComponents}) => selectedComponents.sort());
+        return r;
+    }
 
-        return any ? encoded : undefined;
+    encode(): EncodedTreebankSelection|undefined {
+        if (!this.selectedTreebanks) return undefined;
+        return this.selectedTreebanks.reduce<EncodedTreebankSelection>((selection, {treebank, selectedComponents}) => {
+            const provider = selection[treebank.provider] || (selection[treebank.provider] = {});
+            provider[treebank.id] = selectedComponents;
+            return selection;
+        }, {});
+    }
+
+    /** Decode the state. Overwrites current internal state. */
+    decode(encoded: EncodedTreebankSelection|LegacyEncodedTreebankSelection) {
+        this.data = {};
+        // legacy format
+        if (isLegacy(encoded)) {
+            function databaseName(corpus: string, component: string) {
+                return corpus.toUpperCase().replace('-', '_') + `_ID_${component}`;
+            }
+            const corpus = encoded.corpus;
+            const components = encoded.components;
+            this.data = { 
+                gretel: {
+                    [corpus]: { 
+                        selected: true, 
+                        components: components
+                            .map(component => databaseName(corpus, component))
+                            .reduce((selection, component) => { 
+                                selection[component] = true; 
+                                return selection; 
+                            }, {} as Record<string, boolean>)
+                    }
+                }
+            };
+        } else {
+            for (const provider of Object.keys(encoded)) {
+                for (const [corpus, selectedComponents] of Object.entries(encoded[provider])) {
+                    const state = this.getTreebank({provider, id: corpus});
+                    state.selected = true;
+                    selectedComponents.forEach(c => state.components[c] = true);
+                }
+            }
+        }
     }
 
     equals(other: TreebankSelection) {
-        const providers = this.providers;
-        if (providers.length !== other.providers.length) {
-            return false;
-        }
-        for (let i = 0; i < other.providers.length; i++) {
-            const provider = providers[i];
-            const otherProvider = other.providers[i];
-
-            if (provider.name !== otherProvider.name) {
-                return false;
-            }
-
-            if (provider.corpora.length !== otherProvider.corpora.length) {
-                return false;
-            }
-
-            for (let j = 0; j < otherProvider.corpora.length; j++) {
-                const corpus = provider.corpora[j];
-                const otherCorpus = otherProvider.corpora[j];
-                if (corpus.name !== otherCorpus.name) {
-                    return false;
-                }
-
-                if (corpus.components.length !== otherCorpus.components.length) {
-                    return false;
-                }
-
-                for (let k = 0; k < otherCorpus.components.length; k++) {
-                    if (corpus.components[k] !== otherCorpus.components[k]) {
-                        return false;
-                    }
-                }
-            }
-        }
-
-        return true;
+        return isEqual(other.encode(), this.encode());
     }
 
     hasAnySelection() {
-        for (const corpora of Object.values(this.data)) {
-            for (const selection of Object.values(corpora)) {
-                if (selection.selected && Object.values(selection.components).some(x => x)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return this.selectedTreebanks.length > 0;
     }
 
-    isSelected(providerName: string, corpusName: string, componentId: string = null) {
-        const provider = this.data[providerName];
-        if (!provider) {
-            return false;
-        }
-        const corpus = provider[corpusName];
-        if (!corpus) {
-            return false;
-        }
-        if (!componentId) {
-            return corpus.selected;
-        }
-
-        return corpus.components[componentId];
+    isSelected(providerName: string, corpusName: string, componentId?: string) {
+        if (componentId) 
+            return this.data[providerName]?.[corpusName]?.components[componentId];
+        else 
+            return this.data[providerName]?.[corpusName]?.selected;
     }
 
-    constructor(private treebankService: TreebankService, state: ReturnType<TreebankSelection['encode']> = {}) {
+    constructor(private treebankService: TreebankService, state?: EncodedTreebankSelection|LegacyEncodedTreebankSelection) {
         this.data = {};
-        function databaseName(corpus: string, component: string) {
-            return corpus.toUpperCase().replace('-', '_') + `_ID_${component}`;
-        }
-        if ('corpus' in state && 'components' in state) {
-            // conversion of pre-federated URLs
-            state = {
-                gretel: {
-                    [(state as any).corpus]: (state['components'] as any as string[])
-                        .map(component => databaseName((state as any).corpus, component))
-                }
-            } as any;
-        }
-
-        for (const provider of Object.keys(state)) {
-            this.data[provider] = {};
-            for (const corpus of Object.keys(state[provider])) {
-                const treebankState: CorpusSelection = { selected: true, components: {} };
-                this.data[provider][corpus] = treebankState;
-                for (const component of state[provider][corpus]) {
-                    treebankState.components[component] = true;
-                }
-            }
+        if (state) {
+            this.decode(state);
         }
     }
 
     clone() {
-        const clone = new TreebankSelection(this.treebankService);
+        const clone = new TreebankSelection(this.treebankService, this.encode());
         for (const [provider, corpora] of Object.entries(this.data)) {
             clone.data[provider] = { ...corpora };
         }
@@ -279,7 +287,7 @@ export class TreebankSelection {
 
 // To prevent a circular dependency (actual TreebankService needs this file)
 interface TreebankService {
-    get(corpora: string, corpus: string): Promise<Treebank>;
+    get(corpora: string, corpus: string): Treebank;
 }
 
 export interface TreebankSelectionData {

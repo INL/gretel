@@ -27,7 +27,8 @@ import {
     ResultsStreamService,
     StateService,
     ParseService,
-    NotificationService
+    NotificationService,
+    ResultCount
 } from '../../../services/_index';
 import { TreebankSelection } from '../../../treebank';
 import { StepDirective } from '../step.directive';
@@ -119,7 +120,7 @@ export class ResultsComponent extends StepDirective<GlobalState> implements OnIn
     public loadingTree = false;
     public treeSentence?: SafeHtml;
 
-    public outgoingCounts = {};
+    public outgoingCounts: {[provider: string]: {[corpus: string]: ResultCount[]}} = {};
     public changes = 0;
 
     private subscriptions: Subscription[];
@@ -182,7 +183,7 @@ export class ResultsComponent extends StepDirective<GlobalState> implements OnIn
                         }
                         case NotificationKind.ERROR: {
                             // treebank has errored out!
-                            this.notificationService.add(`Error retrieving results for ${r.corpus.name}: \n${r.result.error.message}`);
+                            this.notificationService.add(`Error retrieving results for ${r.corpus}: \n${r.result.error.message}`);
                             break;
                         }
                         case NotificationKind.NEXT: {
@@ -192,7 +193,7 @@ export class ResultsComponent extends StepDirective<GlobalState> implements OnIn
                             this.hiddenCount += newHidden;
 
                             // Update the counts
-                            const corpus = r.corpus.name;
+                            const corpus = r.corpus;
                             const provider = r.provider;
                             if (!this.outgoingCounts.hasOwnProperty(provider)) {
                                 this.outgoingCounts[provider] = {};
@@ -229,7 +230,7 @@ export class ResultsComponent extends StepDirective<GlobalState> implements OnIn
         try {
             const treeXml = await this.resultsService.highlightSentenceTree(
                 result.provider,
-                result.corpus.name,
+                result.corpus.id,
                 result.component,
                 result.database,
                 result.fileId,
@@ -264,25 +265,26 @@ export class ResultsComponent extends StepDirective<GlobalState> implements OnIn
         this.loadingDownload = true;
         try {
             const results = await Promise.all(
-                this.treebankSelection.corpora.map(corpus =>
+                this.treebankSelection.selectedTreebanks.map(({treebank, selectedComponents}) =>
                     this.resultsService.promiseAllResults(
                         this.xpath,
-                        corpus.provider,
-                        corpus.corpus.name,
-                        corpus.corpus.components,
+                        treebank.provider,
+                        treebank.id,
+                        selectedComponents,
                         this.retrieveContext,
                         false,
                         filterValues,
                         variables).then(hits => ({
-                            corpus: corpus,
+                            treebank,
+                            selectedComponents,
                             hits
                         }))));
 
             const r = results.flatMap(corpusHits => ({
                 xpath: this.xpath,
-                components: corpusHits.corpus.corpus.components,
-                provider: corpusHits.corpus.provider,
-                corpus: corpusHits.corpus.corpus.name,
+                components: corpusHits.selectedComponents,
+                provider: corpusHits.treebank.provider,
+                corpus: corpusHits.treebank.id,
                 hits: corpusHits.hits
             }));
 
@@ -421,7 +423,7 @@ export class ResultsComponent extends StepDirective<GlobalState> implements OnIn
         let count = 0;
         const marked = hits.map(result => {
             const hiddenCorpora = this.hidden && this.hidden[result.provider];
-            const component = hiddenCorpora && hiddenCorpora[result.corpus.name];
+            const component = hiddenCorpora && hiddenCorpora[result.corpus.id];
             const hidden = component && component.hiddenComponents &&
                 component.hiddenComponents[result.component];
             if (hidden) {
