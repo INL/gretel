@@ -102,6 +102,7 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
         { field: 'blacklabLink', header: 'BlackLab', width: '5%' },
         { field: 'componentDisplayName', header: 'Component', width: '20%' },
         { field: 'highlightedSentence', header: 'Sentence', width: 'fill' },
+        { field: 'highlightedSentence2', header: 'Sentence', width: 'fill' },
     ];
 
     public selectedColumns = this.columns.concat();
@@ -168,8 +169,9 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
             fileId: hit.fileId,
             componentDisplayName: hit.componentDisplayName,
             highlightedSentence: hit.highlightedSentence,
+            highlightedSentence2: hit.highlightedSentence2,
             previousSentence: hit.previousSentence,
-            nextSentence: hit.nextSentence
+            nextSentence: hit.nextSentence,
         }));
     }
 
