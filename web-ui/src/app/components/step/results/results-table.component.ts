@@ -170,7 +170,7 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
             highlightedSentence: hit.highlightedSentence,
             previousSentence: hit.previousSentence,
             nextSentence: hit.nextSentence
-        }))
+        }));
     }
 
 
