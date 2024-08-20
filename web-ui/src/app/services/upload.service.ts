@@ -84,7 +84,6 @@ export class UploadService {
                 retries++;
                 intervalMs = 2500;
                 const response = await lastValueFrom(this.http.get<UploadProgressResponse>(url, {withCredentials: true, responseType: 'json'}));
-                debugger;
                 if (response.status === 'PENDING') {
                     intervalMs = 10000;
                     const elapsedSeconds = Math.round((new Date().getTime() - start) / 1000);
