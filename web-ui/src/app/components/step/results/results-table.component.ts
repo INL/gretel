@@ -99,10 +99,10 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
     }> = [
         { field: 'number', header: '#', width: '5%' },
         { field: 'fileId', header: 'ID', width: '20%' },
-        { field: 'blacklabLink', header: 'BlackLab', width: '5%' },
+        // { field: 'blacklabLink', header: 'BlackLab', width: '5%' },
         { field: 'componentDisplayName', header: 'Component', width: '20%' },
-        { field: 'highlightedSentence', header: 'Sentence', width: 'fill' },
-        { field: 'highlightedSentence2', header: 'Sentence', width: 'fill' },
+        { field: 'highlightedSentence', header: 'Sentence', width: '20%' },
+        { field: 'highlightedSentence2', header: 'Vernederlandst', width: '20%' },
     ];
 
     public selectedColumns = this.columns.concat();
@@ -147,7 +147,6 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
     }
 
     ngOnChanges(changes: TypedChanges<{ filteredResults: HitWithOrigin[]; }>): void {
-        console.log('changes', changes);
         if (changes.filteredResults) {
             const extraColumns: Record<string, (typeof this.columns)[number]> = {};
 
@@ -158,21 +157,22 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
                 }
             }
 
-            this.columns = this.columns.slice(0, 4).concat(Object.values(extraColumns));
+            this.columns = this.columns.slice(0, 5).concat(Object.values(extraColumns));
             this.selectedColumns = this.selectedColumns.filter(c => {
                 return this.columns.some(col => col.field === c.field);
             })
+        
+            console.log('new hits in table', changes.filteredResults.currentValue);
+            this.processedHits = changes.filteredResults.currentValue.map(hit => ({
+                ...hit.metaValues,
+                fileId: hit.fileId,
+                componentDisplayName: hit.componentDisplayName,
+                highlightedSentence: hit.highlightedSentence,
+                highlightedSentence2: hit.highlightedSentence2,
+                previousSentence: hit.previousSentence,
+                nextSentence: hit.nextSentence,
+            }));
         }
-
-        this.processedHits = changes.filteredResults.currentValue.map(hit => ({
-            ...hit.metaValues,
-            fileId: hit.fileId,
-            componentDisplayName: hit.componentDisplayName,
-            highlightedSentence: hit.highlightedSentence,
-            highlightedSentence2: hit.highlightedSentence2,
-            previousSentence: hit.previousSentence,
-            nextSentence: hit.nextSentence,
-        }));
     }
 
 
