@@ -23,16 +23,16 @@ const links: Link[] = [
         link: '/xpath-search',
         proxy: false,
     },
-    {
-        name: 'Multiword Expressions',
-        link: '/mwe-search',
-        proxy: false,
-    },
-    {
-        name: 'Upload',
-        link: '/upload-treebank',
-        proxy: false,
-    },
+    // {
+    //     name: 'Multiword Expressions',
+    //     link: '/mwe-search',
+    //     proxy: false,
+    // },
+    // {
+    //     name: 'Upload',
+    //     link: '/upload-treebank',
+    //     proxy: false,
+    // },
     {
         name: 'About',
         link: '/about',
