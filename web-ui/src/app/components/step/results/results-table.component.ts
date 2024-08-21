@@ -92,20 +92,21 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
     public hiddenCount = 0;
     private subscriptions: Subscription[];
 
-    public columns: Array<{
+    public defaultColumns: Array<{
         field: string[]|string;
         header: string;
         width: string;
     }> = [
         { field: 'number', header: '#', width: '5%' },
         { field: 'fileId', header: 'ID', width: '20%' },
-        // { field: 'blacklabLink', header: 'BlackLab', width: '5%' },
         { field: 'componentDisplayName', header: 'Component', width: '20%' },
+        { field: 'blacklabUrl', header: 'View in BlackLab', width: '5%' },
         { field: 'highlightedSentence', header: 'Sentence', width: '20%' },
         { field: 'highlightedSentence2', header: 'Dialect', width: '20%' },
     ];
-
-    public selectedColumns = this.columns.concat();
+    
+    public columns = this.defaultColumns.concat();
+    public selectedColumns = this.defaultColumns.concat();
 
     public processedHits: Array<Record<string, string|SafeHtml>> = [];
 
@@ -157,7 +158,7 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
                 }
             }
 
-            this.columns = this.columns.slice(0, 5).concat(Object.values(extraColumns));
+            this.columns = this.defaultColumns.concat(Object.values(extraColumns));
             this.selectedColumns = this.selectedColumns.filter(c => {
                 return this.columns.some(col => col.field === c.field);
             })
@@ -171,6 +172,7 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
                 highlightedSentence2: hit.highlightedSentence2,
                 previousSentence: hit.previousSentence,
                 nextSentence: hit.nextSentence,
+                blacklabUrl: `https://gcnd.ato.ivdnt.org/corpus-frontend/GCND_mei/docs/${hit.metaValues.docpid}/?query=${encodeURIComponent(`<s id="${hit.metaValues.sentence_id}"/>`)}`
             }));
         }
     }
