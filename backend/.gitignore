@@ -32,6 +32,11 @@ ENV/
 env.bak/
 venv.bak/
 
+# Celery
 celerybeat-schedule.db
 celerybeat-schedule
-query_result_cache/*
+
+# Uploads, corpora, search cache
+basex-data/
+uploadeeed_treebanks/
+query_result_cache/

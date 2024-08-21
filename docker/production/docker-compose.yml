@@ -1,10 +1,48 @@
 version: "3"
 
+# This docker file has two modes
+# prod/production and dev/development
+# Run them using docker compose up --profile prod/dev.
+# If you pass no profile, it will default to prod (or more specifically the profile will be "", which the prod containers will also run in).
+
+# In prod mode, the contains will use their internal files, and the source code is not required
+# The data files will live in docker volumes. 
+# This means that to completely wipe the data, you must stop the containers, delete the following volumes, then restart the containers:
+# - gretel-database
+# - gretel-uploads
+# - gretel-results-cache
+# - gretel-basex
+
+# In development mode, the backend containers will have the "backend" directory mounted.
+# This means that the uploads, search cache, basex databases, and django database will be in the backend directory.
+# This is useful for development, as you can easily inspect the database, and the files that are uploaded.
+# Additionally, development mode will open a debugpy port for the backend and celery containers, so you can attach a debugger.
+# The ports for this are 5678 for the backend, and 5679 for the celery container.
+# The data during development is in these locations:
+# - backend/db.sqlite
+# - backend/uploaded_treebanks
+# - backend/basex-data
+# - backend/query_result_cache
+
+# Occasionally the frontend may begin to return 502 bad gateway if you've restarted the backend container.
+# This is because the backend container will receive a new IP in the docker network
+# And the nginx in the frontend will not renew its dns cache.
+# To fix this, simply restart the frontend container.
+
+# If you wish to run the frontend in development/live reload mode, simply run "yarn serve" in the web-ui directory.
+# You can then access the frontend on localhost:4200.
+# The backend the frontend will connect to can be specified in two ways:
+# - by configuring the "django" url in the "config.json" file in the web-ui directory
+# - by using the included "proxy.json" file in the web-ui directory. This option requires that the abovementioned "django" url in the "config.json" file is set to "/" (i.e. localhost:4200, where the proxy will also run).
+
+
+
+
 services:
 
   frontend: 
     container_name: gretel-frontend
-    image: instituutnederlandsetaal/gretel5-frontend
+    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-frontend
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile
@@ -13,13 +51,15 @@ services:
       - 80:80
     restart: unless-stopped
 
+  # Backend
+
   backend:
     profiles: 
       - production
       - prod
       - ""
     container_name: gretel-backend
-    image: instituutnederlandsetaal/gretel5-backend
+    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-backend
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile
@@ -34,20 +74,18 @@ services:
       - gretel-uploads:/app/backend/uploaded_treebanks/
       - gretel-results-cache:/app/backend/query_result_cache/
     ports: 
-      - 5678:5678
       - 8000:8000
     command: bash -c "
       python manage.py migrate && 
       python manage.py runserver 0.0.0.0:8000 --pythonpath .."
     restart: unless-stopped
 
-
   backend-dev:
     profiles: 
       - development
       - dev
     container_name: gretel-backend
-    image: instituutnederlandsetaal/gretel5-backend
+    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-backend
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile
@@ -55,7 +93,7 @@ services:
   
     environment: 
       REDIS_HOST: redis
-      BASEX_HOST: basex
+      BASEX_HOST: basex-dev
       ALPINO_HOST: alpino
     ports: 
       - 5678:5678
@@ -68,13 +106,15 @@ services:
       python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 manage.py runserver 0.0.0.0:8000 --pythonpath .."
     restart: unless-stopped
 
+  # Celery
+
   celery: 
     profiles: 
       - production
       - prod
       - ""
     container_name: gretel-celery
-    image: instituutnederlandsetaal/gretel5-backend
+    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-backend
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile
@@ -97,7 +137,7 @@ services:
       - development
       - dev
     container_name: gretel-celery
-    image: instituutnederlandsetaal/gretel5-backend
+    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-backend
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile
@@ -107,7 +147,7 @@ services:
     # Same env as backend as we are basically a duplicate
     environment: 
       REDIS_HOST: redis
-      BASEX_HOST: basex
+      BASEX_HOST: basex-dev
       ALPINO_HOST: alpino
     ports: 
       - 5679:5679
@@ -119,8 +159,8 @@ services:
     image: registry.webhosting.rug.nl/compling/alpino:latest
     environment:
       - PROLOGMAXSIZE=1500M
-    ports:
-      - 7001:7001
+    expose:
+      - 7001 # for posterity
     command: Alpino -notk -veryfast user_max=600000 server_kind=parse server_port=7001 assume_input_is_tokenized=on debug=0 end_hook=xml -init_dict_p batch_command=alpino_server
     
   redis:
@@ -128,15 +168,37 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
 
-  basex: 
+  # BaseX
+
+  basex-dev: 
     container_name: gretel-basex
-    image: instituutnederlandsetaal/gretel5-basex
+    profiles: 
+      - development
+      - dev
+    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-basex
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile.basex
+    volumes:
+      - ../../backend/basex-data:/data
+    restart: unless-stopped
+
+  basex:
+    container_name: gretel-basex
+    profiles: 
+      - production
+      - prod
+      - ""
+    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-basex
+    build: 
+      context: ../..
+      dockerfile: docker/production/Dockerfile.basex
+    volumes:
+      - gretel-basex:/data
     restart: unless-stopped
 
 volumes: 
+  gretel-basex:
   gretel-database:
   gretel-uploads:
   gretel-results-cache:
