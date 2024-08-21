@@ -68,7 +68,6 @@ export class LoginStatusComponent implements OnInit, OnDestroy {
 
     ngOnInit(): void {
         this.subscriptions.push(this.userService.user$.subscribe(user => this.user = user))
-        console.log(this.loginForm)
     }
 
     ngOnDestroy(): void {
