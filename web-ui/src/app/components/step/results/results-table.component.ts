@@ -102,7 +102,7 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
         // { field: 'blacklabLink', header: 'BlackLab', width: '5%' },
         { field: 'componentDisplayName', header: 'Component', width: '20%' },
         { field: 'highlightedSentence', header: 'Sentence', width: '20%' },
-        { field: 'highlightedSentence2', header: 'Vernederlandst', width: '20%' },
+        { field: 'highlightedSentence2', header: 'Dialect', width: '20%' },
     ];
 
     public selectedColumns = this.columns.concat();
