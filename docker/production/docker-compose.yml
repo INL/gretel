@@ -162,7 +162,8 @@ services:
     expose:
       - 7001 # for posterity
     command: Alpino -notk -veryfast user_max=600000 server_kind=parse server_port=7001 assume_input_is_tokenized=on debug=0 end_hook=xml -init_dict_p batch_command=alpino_server
-    
+    restart: unless-stopped
+
   redis:
     container_name: gretel-redis
     image: redis:7-alpine
