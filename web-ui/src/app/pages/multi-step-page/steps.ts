@@ -28,6 +28,8 @@ interface GlobalState {
     loading: boolean;
     inputSentence?: string;
     selectedTreebanks: TreebankSelection;
+    /** Which sentence is showing the details popup. Needs to be in state to bind to url. */
+    showTree?: string;
     /**
      * Query additional custom properties for variables
      */

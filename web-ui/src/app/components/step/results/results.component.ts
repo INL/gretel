@@ -1,16 +1,16 @@
 import { Component, Input, OnDestroy, Output, EventEmitter, OnInit } from '@angular/core';
 import { SafeHtml } from '@angular/platform-browser';
 
-import { combineLatest, BehaviorSubject, Subscription, Observable, merge } from 'rxjs';
+import { combineLatest, BehaviorSubject, Subscription, Observable, merge, EMPTY, firstValueFrom } from 'rxjs';
 import {
     debounceTime,
     distinctUntilChanged,
-    endWith,
-    filter,
     map,
+    mergeMap,
     shareReplay,
-    startWith,
-    switchMap
+    switchMap,
+    tap,
+    throttleTime
 } from 'rxjs/operators';
 
 import { ValueEvent } from 'lassy-xpath';
@@ -22,34 +22,31 @@ import {
     FilterByXPath,
     FilterValue,
     FilterValues,
-    HitWithOrigin,
+    Hit,
     ResultsService,
-    ResultsStreamService,
     StateService,
     ParseService,
-    NotificationService
+    NotificationService,
+    TreebankSelectionService,
+    FinalResults
 } from '../../../services/_index';
-import { TreebankSelection } from '../../../treebank';
 import { StepDirective } from '../step.directive';
 import { NotificationKind } from './notification-kind';
 import { GlobalState, StepType, getSearchVariables } from '../../../pages/multi-step-page/steps';
 import { Filter } from '../../../models/filter';
+import _, { isEqual } from 'lodash';
 
-const DebounceTime = 200;
-
-interface HiddenComponents {
-    [componentId: string]: boolean;
-}
+const DebounceTime = 2500;
 
 interface HideSettings {
     [provider: string]: {
         [corpus: string]: {
-            hiddenComponents: HiddenComponents;
+            hiddenComponents: { [componentId: string]: boolean };
         }
     };
 }
 
-type HidableHit = HitWithOrigin & { hidden: boolean };
+type HidableHit = Hit & { hidden: boolean };
 
 @Component({
     animations,
@@ -58,9 +55,6 @@ type HidableHit = HitWithOrigin & { hidden: boolean };
     styleUrls: ['./results.component.scss']
 })
 export class ResultsComponent extends StepDirective<GlobalState> implements OnInit, OnDestroy {
-    private treebankSelection: TreebankSelection;
-    private filterValuesSubject = new BehaviorSubject<FilterValues>({});
-
     public hidden: HideSettings = {};
     public hiddenCount = 0;
     public filteredResults: HidableHit[] = [];
@@ -74,14 +68,13 @@ export class ResultsComponent extends StepDirective<GlobalState> implements OnIn
     @Output()
     public changeXpath = new EventEmitter<string>();
 
-    @Input('filterValues')
-    public set filterValues(v: FilterValues) {
-        const values = Object.values(v);
-        this.filterValuesSubject.next(v);
-        this.filterXPaths = values.filter((val): val is FilterByXPath => val.type === 'xpath');
-        this.activeFilterCount = values.length;
-    }
-    public get filterValues(): FilterValues { return this.filterValuesSubject.value; }
+    // @Input('filterValues')
+    // public set filterValues(v: FilterValues) {
+    //     const values = Object.values(v);
+    //     this.filterXPaths = values.filter((val): val is FilterByXPath => val.type === 'xpath');
+    //     this.activeFilterCount = values.length;
+    // }
+    // public get filterValues(): FilterValues { return this.filterValuesSubject.value; }
 
     @Output()
     public changeFilterValues = new EventEmitter<FilterValues>();
@@ -129,9 +122,9 @@ export class ResultsComponent extends StepDirective<GlobalState> implements OnIn
         private clipboardService: ClipboardService,
         private notificationService: NotificationService,
         private resultsService: ResultsService,
-        protected resultsStreamService: ResultsStreamService,
         private parseService: ParseService,
-        stateService: StateService<GlobalState>
+        private treebankSelectionService: TreebankSelectionService,
+        stateService: StateService<GlobalState>,
     ) {
         super(stateService);
         this.changeValid = new EventEmitter();
@@ -143,17 +136,16 @@ export class ResultsComponent extends StepDirective<GlobalState> implements OnIn
         const state$ = this.state$.pipe(
             shareReplay(1), // this stream is used as input in multiple others, no need to re-run it for every subscription.
         );
-        const filterValues$ = this.filterValuesSubject.pipe( // the user-selected values
-            debounceTime(1000),
-            map(v => Object.values(v)),
-            shareReplay(1),
-        );
+        // const filterValues$ = this.filterValuesSubject.pipe( // the user-selected values
+        //     debounceTime(1000),
+        //     map(v => Object.values(v)),
+        //     shareReplay(1),
+        // );
 
-        const results$ = this.createResultsStream(state$, filterValues$);
+        // const results$ = this.createResultsStream(state$, filterValues$);
 
         this.subscriptions = [
             state$.subscribe(state => {
-                this.treebankSelection = state.selectedTreebanks;
                 this.variableProperties = state.variableProperties;
                 this.xpath = state.xpath;
             }),
@@ -220,16 +212,23 @@ export class ResultsComponent extends StepDirective<GlobalState> implements OnIn
     }
 
     /** Show a tree of the given xml file, needs to contact the server as the result might not contain the entire tree */
-    async showTree(result: HitWithOrigin) {
+    async showTree(result: Hit) {
         this.treeXml = undefined;
         this.treeFilename = undefined;
         this.loadingTree = true;
         this.treeSentence = result.highlightedSentence;
+        this.stateService.updateState(s => s.showTree = `${
+            result.provider}__${
+            result.corpus}__${
+            result.component}__${
+            result.database}__${
+            result.nodeIds}`
+        )
 
         try {
             const treeXml = await this.resultsService.highlightSentenceTree(
                 result.provider,
-                result.corpus.name,
+                result.corpus,
                 result.component,
                 result.database,
                 result.fileId,
@@ -340,12 +339,15 @@ export class ResultsComponent extends StepDirective<GlobalState> implements OnIn
     }
 
     public addFiltersXPath() {
-        this.customXPath = this.resultsService.createFilteredQuery(
+        firstValueFrom(this.state$.pipe(map(s => s.filterValues)))
+        .then(filterValues => this.customXPath = this.resultsService.createFilteredQuery(
             this.xpath || this.customXPath,
-            Object.values(this.filterValues));
-        this.filterChange({});
-
-        this.changeXpath.next(this.customXPath);
+            Object.values(filterValues)
+        ))
+        .then(newXpath => {
+            this.filterChange({});
+            this.changeXpath.next(newXpath);
+        })
     }
 
     public changeCustomXpath(valueEvent: ValueEvent) {
@@ -363,75 +365,61 @@ export class ResultsComponent extends StepDirective<GlobalState> implements OnIn
 
     /**
      * Gets up-to-date results for all selected treebanks
-     *
-     * Three types of values are emitted:
-     *  'start': indicates a search/new result set is being started
-     *  'finish': all treebanks finished searching
-     *  @type {Notification} either a set of results, a finished message, or an error message within a selected treebank
      */
-    protected createResultsStream(
-        state$: Observable<GlobalState>,
-        filterValue$: Observable<FilterValue[]>
-    ) {
-        return combineLatest(
-            [state$, filterValue$]
-        ).pipe(
-            filter((values) => values.every(value => value != null)),
-            map(([state, filterValues]) => ({
+    protected createResultsStream(): Observable<FinalResults> {
+        return combineLatest([
+            this.stateService.state$.pipe(mergeMap(async state => ({
                 retrieveContext: state.retrieveContext,
-                selectedTreebanks: state.selectedTreebanks,
                 xpath: state.xpath,
-                filterValues
-            })),
-            distinctUntilChanged((prev, curr) => {
-                // results are going to be reloaded, but we need to
-                // wait for the debouncing first.
-                // already give feedback a change is pending,
-                // so the user doesn't think the interface is stuck
-                this.loading = true;
-                return prev.retrieveContext === curr.retrieveContext &&
-                    prev.filterValues === curr.filterValues &&
-                    prev.xpath === curr.xpath &&
-                    prev.selectedTreebanks.equals(curr.selectedTreebanks);
-            }),
-            debounceTime(DebounceTime),
-            switchMap(({ selectedTreebanks, xpath, filterValues, retrieveContext }) => {
-                // create a request for each treebank
-                const resultStreams = this.resultsStreamService.stream(
+                filters: state.filterValues,
+            }))),
+            this.treebankSelectionService.selectedTreebanksLoaded$,
+        ])
+        .pipe(
+            distinctUntilChanged((a,b) => isEqual(a,b)),
+            tap(() => this.loading = true),
+            throttleTime(DebounceTime, undefined, { leading: true, trailing: true }),
+            switchMap(([{retrieveContext, xpath, filters: filterValues}, selection]) => 
+                this.resultsService.streamAllResultsIncrementally({
+                    corpora: selection,
                     xpath,
-                    selectedTreebanks,
-                    filterValues,
-                    retrieveContext);
-
-                // join all results, and wrap the entire sequence in a start and end message so
-                // we know what's happening and can update spinners etc.
-                return merge(...resultStreams).pipe(
-                    startWith('start'),
-                    endWith('finish'),
-                );
-            }),
+                    metadataFilters: Object.values(filterValues),
+                    retrieveContext,
+                }).pipe(tap({complete: () => this.loading = false}))
+            ),
         );
     }
 
-    /**
-     * Mark the hits which are part of hidden components or banks and
-     * return a count of the hidden hits.
-     */
-    private hideHits(hits: HitWithOrigin[] = this.filteredResults): [HidableHit[], number] {
-        let count = 0;
-        const marked = hits.map(result => {
-            const hiddenCorpora = this.hidden && this.hidden[result.provider];
-            const component = hiddenCorpora && hiddenCorpora[result.corpus.name];
-            const hidden = component && component.hiddenComponents &&
-                component.hiddenComponents[result.component];
-            if (hidden) {
-                count++;
-            }
-            return Object.assign({}, result, { hidden });
-        });
 
-        return [marked, count];
+    private hideHits2(hits: FinalResults): FinalResults&{hiddenCount: number} {
+        let hiddenCount = 0;
+        hits.results.forEach(r => {
+            const hidden = this.hidden[r.treebank.provider]?.[r.treebank.id]?.hiddenComponents[ r.component];
+            if (hidden) hiddenCount++;
+            r.hidden = hidden;
+        })
+        return {...hits, hiddenCount: hiddenCount};
     }
+
+    // /**
+    //  * Mark the hits which are part of hidden components or banks and
+    //  * return a count of the hidden hits.
+    //  */
+    // private hideHits(hits: Hit[] = this.filteredResults): [HidableHit[], number] {
+    //     let count = 0;
+    //     const marked = hits.map(result => {
+    //         const hiddenCorpora = this.hidden && this.hidden[result.provider];
+    //         const component = hiddenCorpora && hiddenCorpora[result.corpus.name];
+    //         const hidden = component && component.hiddenComponents &&
+    //             component.hiddenComponents[result.component];
+    //         if (hidden) {
+    //             count++;
+    //         }
+    //         return Object.assign({}, result, { hidden });
+    //     });
+
+    //     return [marked, count];
+    // }
 
     public getWarningMessage() {
         // Should never show warning

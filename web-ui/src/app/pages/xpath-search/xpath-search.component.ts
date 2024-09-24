@@ -65,7 +65,8 @@ export class XpathSearchComponent extends MultiStepPageDirective<GlobalState> im
             selectedTreebanks: new TreebankSelection(
                 this.treebankService,
                 queryParams.selectedTreebanks ? JSON.parse(queryParams.selectedTreebanks) : undefined),
-            xpath: queryParams.xpath || this.defaultGlobalState.xpath
+            xpath: queryParams.xpath || this.defaultGlobalState.xpath,
+            showTree: queryParams.showTree
         };
     }
 

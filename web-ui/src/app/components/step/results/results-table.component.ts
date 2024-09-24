@@ -11,10 +11,11 @@ import {
 import { animations } from '../../../animations';
 import { TreebankMetadata, TreebankSelection } from '../../../treebank';
 import {
-    HitWithOrigin, FilterValues, FilterByXPath,
+    FilterValues, FilterByXPath,
     StateService,
     MetadataValueCounts,
     ResultsService,
+    Hit,
 } from '../../../services/_index';
 import { GlobalState } from '../../../pages/multi-step-page/steps';
 import { Filter } from '../../../models/filter';
@@ -30,7 +31,7 @@ const DebounceTime = 200;
     templateUrl: './results-table.component.html',
     styleUrls: ['./results-table.component.scss'],
 })
-export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<{filteredResults: HitWithOrigin[]}> {
+export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<{filteredResults: Hit[]}> {
     faBars = faBars;
     faChevronLeft = faChevronLeft;
     faChevronRight = faChevronRight;
@@ -46,7 +47,7 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
     public loadingDownload = true;
 
     @Input()
-    public filteredResults: HitWithOrigin[] = [];
+    public filteredResults: Hit[] = [];
 
     @Input()
     /**
@@ -76,7 +77,7 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
     public next = new EventEmitter<void>();
 
     @Output()
-    public showTree = new EventEmitter<HitWithOrigin>();
+    public showTree = new EventEmitter<Hit>();
 
     @Output()
     public toggleContext = new EventEmitter<void>();
@@ -147,7 +148,7 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
         this.subscriptions.forEach(s => s.unsubscribe());
     }
 
-    ngOnChanges(changes: TypedChanges<{ filteredResults: HitWithOrigin[]; }>): void {
+    ngOnChanges(changes: TypedChanges<{ filteredResults: Hit[]; }>): void {
         if (changes.filteredResults) {
             const extraColumns: Record<string, (typeof this.columns)[number]> = {};
 

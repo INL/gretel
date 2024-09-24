@@ -29,16 +29,17 @@ export class DownloadService {
     }
 
     public async downloadResults(
-        results: { corpus: string, components: string[], xpath: string, hits: Hit[] }[],
+        results: { corpus: string, provider: string, components: string[], xpath: string, hits: Hit[] }[],
         variables?: SearchVariable[]) {
         const zip = new JSZip();
         const corporaNames: string[] = [];
-        results.forEach(({ corpus, components, xpath, hits }) => {
+        results.forEach(({ corpus, components, provider, xpath, hits }) => {
             zip.file(
                 `${corpus}.meta.txt`,
                 this.blob(
                     'text/plain',
                     [`Corpus:\n\t${corpus}
+Provider:\n\t${provider}
 Components:\n\t${components.join('-')}
 XPath:\n\t${xpath.split('\n').join('\n\t')}
 Date:\n\t${new Date()}

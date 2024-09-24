@@ -98,7 +98,8 @@ export abstract class MultiStepPageDirective<T extends GlobalState> implements O
             'xpath': state.xpath !== this.defaultGlobalState.xpath ? state.xpath : undefined,
             'selectedTreebanks': selectedTreebanks && JSON.stringify(selectedTreebanks),
             'retrieveContext': this.encodeBool(state.retrieveContext),
-            'varProps': state.variableProperties && state.variableProperties.length ? JSON.stringify(state.variableProperties) : undefined
+            'varProps': state.variableProperties && state.variableProperties.length ? JSON.stringify(state.variableProperties) : undefined,
+            'showTree': state.showTree || undefined
         };
     }
 

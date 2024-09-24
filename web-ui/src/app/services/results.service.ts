@@ -3,13 +3,14 @@ import { Injectable, SecurityContext } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 
-import { Observable } from 'rxjs';
+import { EMPTY, from, Observable } from 'rxjs';
 
 import { ConfigurationService } from './configuration.service';
 import { ParseService } from './parse.service';
-import { publishReplay, refCount } from 'rxjs/operators';
+import { catchError, expand, filter, mergeMap, scan, shareReplay, tap } from 'rxjs/operators';
 import { PathVariable, Location } from 'lassy-xpath';
 import { NotificationService } from './notification.service';
+import { TreebankComponent, TreebankLoaded } from '../treebank';
 
 const httpOptions = {
     headers: new HttpHeaders({
@@ -39,13 +40,71 @@ export interface SearchBehaviour {
     exclusions?: string[],
 }
 
+type SearchParamsInput = {
+    xpath: string,
+    corpora: Array<{ treebank: TreebankLoaded, selectedComponents: TreebankComponent[] }>,
+    retrieveContext: boolean,
+    isAnalysis?: boolean,
+    metadataFilters?: FilterValue[],
+    variables?: SearchVariable[],
+    behaviour?: SearchBehaviour,
+}
+
+type EverythingForASearch = {
+    url: string;
+    results?: SearchResults,
+    start_from?: number,
+
+    xpath: string,
+    retrieveContext: boolean,
+    /** 
+     * We need to know details about the searched corpus in order to display results. 
+     * Which is why we have the entire treebank object here.
+    */
+    treebank: TreebankLoaded,
+    /** 
+     * This should only contain the components that are actually selected for searching.
+     * We need to know details about the searched components in order to compute statistics and for displaying a in the UI. 
+     * We don't want to do this repeatedly in the components, so we pass them here. 
+     */
+    selectedComponents: TreebankComponent[],
+    is_analysis: boolean,
+    variables: Array<{
+        name: string;
+        path: string;
+        props: Record<string, string>;
+    }>
+    behaviour: SearchBehaviour,
+}
+
+export type FinalResults = {
+    providers: {
+        [provider: string]: {
+            results: Hit[],
+            corpora: {
+                [corpus: string]: {
+                    progress: number,
+                    results: Hit[],
+                    components: {
+                        [component: string]: Hit[],
+                    }
+                    variants: {
+                        [variant: string]: Hit[],
+                    },
+                    groups: {
+                        [group: string]: Hit[],
+                    },
+                }   
+            }
+        },
+    }
+    results: Hit[],
+    progress: number,
+}
+
+
 @Injectable()
 export class ResultsService {
-    defaultIsAnalysis = false;
-    defaultMetadataFilters: FilterValue[] = [];
-    defaultVariables: SearchVariable[] = null;
-    defaultBehaviour: SearchBehaviour = {supersetXpath: null, expandIndex: false};
-
     constructor(
         private http: HttpClient,
         private sanitizer: DomSanitizer,
@@ -54,166 +113,104 @@ export class ResultsService {
         private notificationService: NotificationService) {
     }
 
-    /** On error the returned promise rejects with @type {HttpErrorResponse} */
-    promiseAllResults(
-        xpath: string,
-        provider: string,
-        corpus: string,
-        componentIds: string[],
-        retrieveContext: boolean,
-        isAnalysis = this.defaultIsAnalysis,
-        metadataFilters = this.defaultMetadataFilters,
-        variables = this.defaultVariables,
-        cancellationToken: Observable<{}> | null = null
-    ): Promise<Hit[]> {
-        return new Promise<Hit[]>((resolve, reject) => {
-            const hits: Hit[] = [];
-            const subscription = this.getAllResults(
-                xpath,
-                provider,
-                corpus,
-                componentIds,
-                retrieveContext,
-                isAnalysis,
-                metadataFilters,
-                variables
-            ).subscribe(
-                (res: SearchResults) => hits.push(...res.hits),
-                (e: HttpErrorResponse) => reject(e),
-                () => resolve(hits)
-            );
-
-            if (cancellationToken != null) {
-                cancellationToken.subscribe(() => {
-                    subscription.unsubscribe();
-                });
-            }
-        });
+    private providerSearchUrl(provider: string, corpus: string): Promise<string> {
+        return this.configurationService.getDjangoUrl('search/search/');
     }
 
-    /** On error the returned stream error has type @type {HttpErrorResponse} */
-    getAllResults(
-        xpath: string,
-        provider: string, // Not used anymore but leave for now
-        corpus: string,
-        componentIds: string[],
-        retrieveContext: boolean,
-        isAnalysis = this.defaultIsAnalysis,
-        metadataFilters = this.defaultMetadataFilters,
-        variables = this.defaultVariables,
-        behaviour = this.defaultBehaviour,
-    ): Observable<SearchResults> {
-        const observable = new Observable<SearchResults>(observer => {
-            const worker = async () => {
-                let queryId: number = undefined;
-                let retrievedMatches: number = 0;
 
-                while (!observer.closed) {
-                    let results: SearchResults | false | null = null;
-                    let error: HttpErrorResponse | null = null;
-
-                    try {
-                        results = await this.results(
-                            xpath,
-                            corpus,
-                            componentIds,
-                            queryId,
-                            retrievedMatches,
-                            retrieveContext,
-                            isAnalysis,
-                            metadataFilters,
-                            variables,
-                            behaviour
-                        );
-                    } catch (e) {
-                        error = e;
-                    }
-
-                    if (!observer.closed) {
-                        if (results) {
-                            observer.next(results);
-                            queryId = results.queryId;
-                            retrievedMatches += results.hits.length;
-
-                            // TODO maybe not the nicest way to show progress
-                            const percentage = Math.round(results.searchPercentage)
-                            if (!results.cancelled) {
-                                this.notificationService.add(
-                                    "Searching at " +
-                                    percentage + "%", "success"
-                                );
-                            } else {
-                                this.notificationService.add(
-                                    "Search was cancelled at " +
-                                    percentage + "%", "warning"
-                                );
-                                observer.complete();
-                            }
-
-                            if (results.searchPercentage === 100) {
-                                if (results.errors) {
-                                    // TODO work on error notifications
-                                    this.notificationService.add('Errors occured while searching (check JavaScript console).');
-                                    console.log(results.errors);
-                                }
-                                observer.complete();
-                            }
-                        } else if (error != null) {
-                            observer.error(error);
-                        }
-                    }
-                    await new Promise(r => setTimeout(r, 1000));
-                }
-            };
-            worker();
-        });
-
-        return observable.pipe(publishReplay(1), refCount());
-    }
-
-    /**
-     * Queries the treebank and returns the matching hits.
-     * On error the returned promise rejects with @type {HttpErrorResponse}
-     *
-     * @param xpath Specification of the pattern to match
-     * @param corpus Identifier of the corpus
-     * @param components Identifiers of the sub-treebanks to search
-     * @param queryId The query number, given back by the API after the first request
-     * @param retrievedMatches The number of matches previously given by the API so that they are not given again
-     * @param retrieveContext Get the sentence before and after the hit
-     * @param isAnalysis Whether this search is done for retrieving analysis results, in that case a higher result limit is used
-     * @param metadataFilters The filters to apply for the metadata properties
-     * @param variables Named variables to query on the matched hit (can be determined using the Extractinator)
+    /** 
+     * Run the current search and return the input + results. 
+     * If no results, an empty stream is returned. 
+     * If an error occurs, the error is caught, a notification is popped and an empty stream is returned.
+     * The returned object contains the results plus all information needed to request the next page of results.
      */
-    private async results(
-        xpath: string,
-        corpus: string,
-        components: string[],
-        queryId: number = undefined,
-        retrievedMatches: number = undefined,
-        retrieveContext: boolean,
-        isAnalysis = this.defaultIsAnalysis,
-        metadataFilters = this.defaultMetadataFilters,
-        variables = this.defaultVariables,
-        behaviour: SearchBehaviour,
-    ): Promise<SearchResults | false> {
-        const results = await this.http.post<ApiSearchResult | false>(
-            await this.configurationService.getDjangoUrl('search/search/'), {
-            xpath: this.createFilteredQuery(xpath, metadataFilters),
-            retrieveContext,
-            treebank: corpus,
-            query_id: queryId,
-            start_from: retrievedMatches,
-            components,
-            is_analysis: isAnalysis,
-            variables: this.formatVariables(variables),
-            behaviour,
-        }, httpOptions).toPromise();
-        if (results) {
-            return this.mapResults(results);
-        }
+    nextPage(p: EverythingForASearch): Observable<EverythingForASearch> {
+        if (!p.results) return EMPTY;
 
-        return false;
+        return this.http.post<ApiSearchResult | false>(p.url, {
+            xpath: p.xpath,
+            query_id: p.results?.queryId,
+            start_from: p.start_from ?? 0,
+            retrieveContext: p.retrieveContext,
+            treebank: p.treebank,
+            components: p.selectedComponents,
+            is_analysis: p.is_analysis,
+            variables: p.variables,
+            behaviour: p.behaviour,
+        }, httpOptions)
+        .pipe(
+            catchError((e: HttpErrorResponse) => {
+                this.notificationService.add('Error while searching: ' + e.message, 'error');
+                return EMPTY;
+            }),
+            tap(r => {
+                if (typeof r === 'boolean') return;
+                if (r.cancelled) {
+                    this.notificationService.add('Search was cancelled', 'warning');    
+                } else if (r.search_percentage === 100 && r.errors) {
+                    // TODO work on error notifications
+                    this.notificationService.add('Errors occured while searching (check JavaScript console).');
+                    console.log(r.errors);
+                } else {
+                    this.notificationService.add(`Searching at ${Math.round(r.search_percentage * 100)}%`, "success");
+                }
+            }),
+            filter(r => r !== false && !r.cancelled),
+            mergeMap(async (r: ApiSearchResult) => ({
+                ...p, 
+                results: await this.mapResults(p, r), 
+                start_from: p.start_from + r.results.length
+            }))
+        )
+    } 
+
+    /** Create the required info to send a request for results to the server. */
+    async makeParameters(treebank: TreebankLoaded, selectedComponents: TreebankComponent[], props: SearchParamsInput): Promise<EverythingForASearch> {
+        return {
+            treebank,
+            selectedComponents,
+            url: await this.providerSearchUrl(treebank.provider, treebank.id),
+            xpath: this.createFilteredQuery(props.xpath, props.metadataFilters),
+            is_analysis: props.isAnalysis,
+            behaviour: props.behaviour,
+            retrieveContext: props.retrieveContext,
+            variables: this.formatVariables(props.variables),
+        };
+    }
+
+    static addResultsToAccumulator(acc: FinalResults, r: EverythingForASearch): FinalResults {
+        if (!r.results) return acc;
+        
+        const p = acc.providers[r.treebank.provider] = acc.providers[r.treebank.provider] || {results: [], corpora: {}};
+        p.results.push(...r.results.hits);
+        const t = p.corpora[r.treebank.id] = p.corpora[r.treebank.id] || {results: [], components: {}, variants: {}, groups: {}, progress: 0};
+        t.results.push(...r.results.hits);
+
+        r.results.hits.forEach(hit => {
+            acc.results.push(hit);
+            p.results.push(hit);
+            t.results.push(hit);
+            t.progress = r.results.searchPercentage;
+            
+            const component = r.selectedComponents.find(c => c.id === hit.component)!;
+            (t.components[hit.component] = t.components[hit.component] || []).push(hit);
+            if (component?.variant) (t.variants[component.variant] = t.variants[component.variant] || []).push(hit);
+            if (component?.group) (t.groups[component.group] = t.groups[component.group] || []).push(hit);
+        })
+        return acc;
+    }
+
+    /** Return a stream that repeatedly emits an object containing all results so far. */
+    streamAllResultsIncrementally(props: SearchParamsInput): Observable<FinalResults> {
+        if (!props.xpath || !props.corpora?.length)
+            return EMPTY;
+        
+        return from(props.corpora).pipe(
+            mergeMap(c => this.makeParameters(c.treebank, c.selectedComponents, props)),
+            expand((p, i) => this.nextPage(p)),
+            scan<EverythingForASearch, FinalResults>(ResultsService.addResultsToAccumulator, {progress: 0, results: [], providers: {}}),
+            shareReplay(1)
+        );
     }
 
     /**
@@ -384,9 +381,9 @@ export class ResultsService {
         return null;
     }
 
-    private async mapResults(results: ApiSearchResult): Promise<SearchResults> {
+    private async mapResults(info: Omit<EverythingForASearch, 'results'>, results: ApiSearchResult): Promise<SearchResults> {
         return {
-            hits: await this.mapHits(results),
+            hits: await this.mapHits(info, results),
             queryId: results.query_id,
             searchPercentage: results.search_percentage,
             errors: results.errors,
@@ -395,8 +392,9 @@ export class ResultsService {
         };
     }
 
-    private mapHits(results: ApiSearchResult): Promise<Hit[]> {
-        return Promise.all(results.results.map(async result => {
+    private mapHits(info: Omit<EverythingForASearch, 'results'>, results: ApiSearchResult): Promise<Hit[]> {
+        let lastComponent: TreebankComponent | undefined;
+        return Promise.all(results.results.map(async (result): Promise<Hit> => {
             const hitId = result.sentid;
             const sentence = result.sentence;
             const sentence2 = result.sentence2;
@@ -407,9 +405,13 @@ export class ResultsService {
             const variableValues = this.mapVariables(await this.parseService.parseXml(result.variables));
             const component = result.component;
             const database = result.database;
-            return {
+            
+            if (lastComponent?.id !== component) lastComponent = info.selectedComponents.find(c => c.id === component)!;
+            const r: Hit = {
+                treebank: info.treebank,
                 component,
                 database,
+
                 fileId: hitId.replace(/\+match=\d+$/, ''),
                 sentence,
                 sentence2,
@@ -421,11 +423,10 @@ export class ResultsService {
                 nodeIds: result.ids.split('-').map(x => parseInt(x, 10)),
                 nodeStarts,
                 metaValues,
-                /**
-                 * Contains the XML of the node matching the variable
-                 */
-                variableValues
+                variableValues,
+                hidden: false,
             };
+            return r;
         }));
     }
 
@@ -477,10 +478,8 @@ export class ResultsService {
         }, {} as Hit['variableValues']);
     }
 
-    /**
-     * Format variables for sending to the server
-     */
-    private formatVariables(variables: SearchVariable[]) {
+    /** Format variables for sending to the server */
+    private formatVariables(variables: SearchVariable[]): EverythingForASearch['variables'] {
         return variables?.map(variable => ({
             name: variable.name,
             path: variable.path,
@@ -488,19 +487,12 @@ export class ResultsService {
         }));
     }
 
-    private formatVariableProps(props?: SearchVariable['props']) {
-        if (!props || props.length === 0) {
-            return undefined;
-        }
-
-        const result: { [name: string]: string } = {};
-        for (const prop of props) {
-            if (prop.enabled) {
-                result[prop.name] = prop.expression;
-            }
-        }
-
-        return result;
+    /** Returns a map of propname -> prop expression */
+    private formatVariableProps(props?: SearchVariable['props']): Record<string, string>|undefined {
+        return props?.length && props.reduce((acc, prop) => {
+            if (prop.enabled) acc[prop.name] = prop.expression;
+            return acc;
+        }, {});
     }
 
     private highlightSentence(sentence: string, nodeStarts: number[], tag: string) {
@@ -560,6 +552,7 @@ type ApiSearchResult = {
         begins: string,
         xml_sentences: string,
         meta: string,
+        /** Contains the XML of the node matching the variable */
         variables: string,
         component: string,
         database: string
@@ -587,6 +580,7 @@ export interface SearchResults {
 }
 
 export interface Hit {
+    treebank: TreebankLoaded,
     /** Id of the component this hit originated from */
     component: string;
     /**
@@ -613,6 +607,8 @@ export interface Hit {
     metaValues: { [key: string]: string };
     /** Contains the properties of the node matching the variable */
     variableValues: { [variableName: string]: { [propertyKey: string]: string } };
+    /** For UI purposes. Never set by server. */
+    hidden: boolean;
 }
 
 export interface ResultCount {
@@ -621,13 +617,6 @@ export interface ResultCount {
     completed: boolean;
     percentage: number;
 }
-
-export type HitWithOrigin = Hit & {
-    provider: string;
-    corpus: { name: string };
-    componentDisplayName: string;
-};
-
 
 export type FilterValue = FilterByField | FilterByXPath;
 export type FilterByField =
