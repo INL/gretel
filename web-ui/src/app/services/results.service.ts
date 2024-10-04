@@ -515,7 +515,7 @@ export class ResultsService {
             next = $groups[3];
         }
 
-        const words = sentence.split(' ');
+        const words = sentence.split(/\s+/g);
 
         // Instead of wrapping each individual word in a tag, merge sequences
         // of words in one <tag>...</tag>
