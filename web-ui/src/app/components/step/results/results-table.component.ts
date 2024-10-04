@@ -163,7 +163,6 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
                 return this.columns.some(col => col.field === c.field);
             })
         
-            console.log('new hits in table', changes.filteredResults.currentValue);
             this.processedHits = changes.filteredResults.currentValue.map(hit => ({
                 ...hit.metaValues,
                 fileId: hit.fileId,
@@ -172,7 +171,7 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
                 highlightedSentence2: hit.highlightedSentence2,
                 previousSentence: hit.previousSentence,
                 nextSentence: hit.nextSentence,
-                blacklabUrl: `https://gcnd.ato.ivdnt.org/corpus-frontend/GCND_mei/docs/${hit.metaValues.docpid}/?query=${encodeURIComponent(`<s id="${hit.metaValues.sentence_id}"/>`)}`
+                blacklabUrl: `https://gcnd.ato.ivdnt.org/corpus-frontend/GCND-Hackathon/docs/${hit.metaValues.docpid}/?query=${encodeURIComponent(`<s id="${hit.metaValues.sentence_id}"/>`)}`
             }));
         }
     }
