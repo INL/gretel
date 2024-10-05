@@ -5,9 +5,10 @@ version: "3"
 # Run them using docker compose up --profile prod/dev.
 # If you pass no profile, it will default to prod (or more specifically the profile will be "", which the prod containers will also run in).
 
-# In prod mode, the contains will use their internal files, and the source code is not required
+# In prod mode, the containers will use their internal files, and the source code is not required
 # The data files will live in docker volumes. 
 # This means that to completely wipe the data, you must stop the containers, delete the following volumes, then restart the containers:
+# (alternatively `docker-compose down -v` should do the trick)
 # - gretel-database
 # - gretel-uploads
 # - gretel-results-cache
