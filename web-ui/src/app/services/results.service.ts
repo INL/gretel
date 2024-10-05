@@ -242,7 +242,7 @@ export class ResultsService {
             url2,
             data
         ).toPromise();
-        return this.highlightSentenceNodes(response.tree, nodeIds);
+        return this.highlightSentenceNodes(response.tree, nodeIds.filter(n => !isNaN(Number(n))));
     }
 
     /** adds a "highlight=yes" attribute to all nodes with ID, and their descendants. */
@@ -515,7 +515,7 @@ export class ResultsService {
             next = $groups[3];
         }
 
-        const words = sentence.split(/\s+/g);
+        const words = sentence.split(/\s+/g).filter(w => w.length);
 
         // Instead of wrapping each individual word in a tag, merge sequences
         // of words in one <tag>...</tag>
