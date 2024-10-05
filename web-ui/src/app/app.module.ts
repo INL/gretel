@@ -23,6 +23,7 @@ import { ProgressBarModule } from 'primeng/progressbar'
 import { AppComponent } from './app.component';
 import { AboutContentComponent } from './pages/about-page/about-content.component';
 import { AboutPageComponent } from './pages/about-page/about-page.component';
+import { CreditsComponent } from './components/page-components/credits/credits.component';
 import { HomePageComponent } from './pages/home-page/home-page.component';
 import { HomeContentComponent } from './pages/home-page/home-content/home-content.component';
 import { AppRoutingModule } from './app-routing/app-routing.module';
@@ -96,6 +97,7 @@ export const declarations: any[] = [
     BalloonDirective,
     BodyHeaderComponent,
     BreadcrumbBarComponent,
+    CreditsComponent,
     DistributionListComponent,
     DocumentationComponent,
     DocumentationContentComponent,
