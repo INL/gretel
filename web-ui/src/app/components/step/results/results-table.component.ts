@@ -277,7 +277,7 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
                 const options: string[] = [];
                 if (item.field in counts) {
                     for (const key of Object.keys(counts[item.field])) {
-                        // TODO: show the frequency (the data it right here now!)
+                        // TODO: show the frequency (the data is right here now!)
                         options.push(key);
                     }
                 }
@@ -296,6 +296,7 @@ export class ResultsTableComponent implements OnInit, OnDestroy, OnTypedChanges<
                     maxValue: item.maxValue,
                     options
                 };
-            });
+            })
+            .filter(f => f.options.length <= 250);
     }
 }
