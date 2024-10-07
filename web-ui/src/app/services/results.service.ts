@@ -248,7 +248,7 @@ export class ResultsService {
     /** adds a "highlight=yes" attribute to all nodes with ID, and their descendants. */
     public highlightSentenceNodes(treeXml: string, nodeIds: Array<string | number>): string {
         const doc = $.parseXML(treeXml);
-        const highlightNodes = Array.from(doc.querySelectorAll(nodeIds.map(id => `node[id="${id}"]`).join(',')));
+        const highlightNodes = Array.from(doc.querySelectorAll(nodeIds.map(id => `node[id="${id}"]`).join(',') || 'node'));
         const highlightDescendants = highlightNodes
             .filter(n => n.hasAttribute('index'))
             .flatMap(n => Array.from(n.querySelectorAll(`node[index="${n.getAttribute('index')}"]`)));
