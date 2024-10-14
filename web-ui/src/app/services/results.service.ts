@@ -636,7 +636,7 @@ export type FilterByField =
     | FilterRangeValue<number, 'int'>
     | FilterMultipleValues<string, 'text'>;
 
-export interface FilterValues { [field: string]: FilterValue; }
+export type FilterValues = Record<string, FilterValue>
 
 export interface FilterSingleValue {
     type: 'single';
@@ -645,7 +645,7 @@ export interface FilterSingleValue {
     value: string;
 }
 
-export interface FilterRangeValue<T, U> {
+export interface FilterRangeValue<T, U extends string> {
     type: 'range';
     dataType: U;
     field: string;
