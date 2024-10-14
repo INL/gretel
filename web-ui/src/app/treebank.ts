@@ -3,24 +3,26 @@ import type { TreebankLookup } from './services/treebank.service';
 export class FuzzyNumber {
     public value = 0;
     public unknown = false;
-    constructor(value: number | '?') {
-        if (value === '?') {
-            this.unknown = true;
-        } else {
-            this.value = value;
-        }
+    constructor(value?: number | string |FuzzyNumber) {
+        if (value !== null)
+            this.add(value);
     }
 
-    /**
-     * Adds a value to this number and modifies this instance.
-     * @param value
-     */
-    public add(value: number | '?') {
-        if (value === '?') {
+    public add(value: FuzzyNumber | number | string): FuzzyNumber {
+        if (value instanceof FuzzyNumber) {
+            this.value += value.value;
+            this.unknown = this.unknown || value.unknown;
+        } else if (value === '?') {
             this.unknown = true;
         } else {
-            this.value += value;
+            const parsed = typeof value === 'number' ? value : Number.parseInt(value, 10); 
+            if (isNaN(parsed)) {
+                this.unknown = true;
+            } else {
+                this.value += parsed;
+            }
         }
+        return this;
     }
 
     public toString() {

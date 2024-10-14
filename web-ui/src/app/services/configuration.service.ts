@@ -17,8 +17,15 @@ export class ConfigurationService {
     private async loadConfig() {
         return this.httpClient.get<Config>(`assets/config/config.${environment.name}.json`).toPromise();
     }
+
+    async getRootUrl() { return (await this.config).django; }
+    async getLegacyUploadUrl() { return (await this.config).legacy_upload; }
+    async getLegacyProviders() { return (await this.config).legacy_providers; }
 }
 
 interface Config {
     django: string;
+
+    legacy_upload: string;
+    legacy_providers: Record<string, string>;
 }
