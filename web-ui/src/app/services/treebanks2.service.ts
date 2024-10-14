@@ -1,11 +1,12 @@
 import { HttpClient } from "@angular/common/http";
 import { FuzzyNumber, TreebankComponent } from "../treebank";
-import _, { countBy, create } from "lodash";
+import _, { countBy, create, isMap } from "lodash";
 import { ConfigurationService } from "./configuration.service";
-import { BehaviorSubject, filter, first, firstValueFrom, ignoreElements, Observable, skip, skipUntil, Subject, take, takeUntil } from "rxjs";
+import { BehaviorSubject, filter, first, firstValueFrom, ignoreElements, map, Observable, of, skip, skipUntil, Subject, switchMap, take, takeUntil } from "rxjs";
 import { query } from "@angular/animations";
 import { TokenAttributes } from "../models/matrix";
 import { FilterValues } from "./results.service";
+import { AlpinoService } from './alpino.service';
 
 export type Component = {
 	id: string;
@@ -27,9 +28,25 @@ export type ComponentSet = {
 	wordCount: FuzzyNumber;
 }
 
-type TreebankBase = {
+export type MetadataDefinition = {
+	type: 'text'|'checkbox'|'slider'|'dropdown';
+	values?: string[];
+	min?: number;
+	max?: number;
+}
+type WithState<T extends string> = { state: T; loading: boolean }
+
+type TreebankStub = {
+	state: 'stub';
+	loading: boolean;
+
 	provider: string;
 	id: string;
+}
+type TreebankBase = Omit<TreebankStub, 'state'|'loading'>&{
+	state: 'partial'
+	loading: boolean;
+
 	displayName: string;
 	description: string;
 	multiOption: boolean;
@@ -37,17 +54,20 @@ type TreebankBase = {
 	/** user id, email, whatever. */
 	owner?: string;
 }
-
-type TreebankLoading = TreebankBase&{state: 'loading'};
-type TreebankStub = TreebankBase&{state: 'stub'};
-type TreebankLoaded = TreebankBase&{
+type TreebankFull = Omit<TreebankBase, 'state'|'loading'>&{
 	state: 'loaded';
+	loading: boolean;
+
 	components: Record<string, Component>;
 	variants: ComponentSet[];
 	groups: ComponentSet[];
+	// TODO
+	// metadata: Record<string, MetadataDefinition>;
 }
 
-export type Treebank = Readonly<TreebankStub>|Readonly<TreebankLoaded>|Readonly<TreebankLoading>;
+type Treebank = TreebankStub|TreebankBase|TreebankFull;
+
+// export type Treebank = Readonly<TreebankPartial>|Readonly<TreebankFull>|Readonly<TreebankStub>;
 
 
 // hoe doen we metadata discovery
@@ -58,12 +78,12 @@ export type Treebank = Readonly<TreebankStub>|Readonly<TreebankLoaded>|Readonly<
 // dan hebben we wel geen display names en descriptions maar is dat erg?
 // hebben we nu ook niet.
 
-type TreebankSelectionState = Readonly<{
+type TreebankSelectionState = {
 	id: string;
 	provider: string;
 	selected: boolean;
-	components: ReadonlySet<string>;
-}>
+	components: Record<string, boolean>;
+}
 
 // so this thing should only contain the booleans
 // then we can have a second service over the top that ties it together with the loading of the treebanks
@@ -80,47 +100,51 @@ type TreebankSelectionState = Readonly<{
 // then we need to marry them to the treebanks in the overlying service
 // but whatever works and lets us load the selection state.
 
+// Can't select a treebank without loading it first.
+// Because we need the components and the multiOption setting.
 type TreebankSelectionServiceState = {
 	[provider: string]: {
-		[id: string]: TreebankSelectionState;
-	}
+		[treebank: string]: TreebankSelectionState
+	};
 }
 
-abstract class ServiceWithStream<T extends object> {
+abstract class ServiceWithStream<T> {
 	protected _state: BehaviorSubject<Readonly<T>>;
-	public get state$() {
+	public get state$(): Observable<Readonly<T>> {
 		return this._state.asObservable();
 	}
+	protected set state(value: T) { this._state.next(value); }
 	protected get state(): T {
 		const self = this;
-
-		// if we return a proxy, and we use it once, the object in the stream will be updated
-		// however, the object the proxy is based on will still be the old value.
-
-		// we need to memoize the path inside the setter
-		// and then update the object when we have the entire path
-		// but how in the world do we do this.
 
 		function createProxy(
 			parent: any,
 			parentProp?: string | symbol,
 			actualObjectInProp?: any
 		) {
+			function isMutableObject(o: any): o is object { 
+				return o?.constructor === Object || Array.isArray(o) || o instanceof Set || o instanceof Map || o instanceof Date;
+			}
+			function makeCopy(o: any) {
+				if (o?.constructor === Object) return { ...o };
+				if (Array.isArray(o)) return [...o];
+				if (o instanceof Set) return new Set(o);
+				if (o instanceof Map) return new Map(o);
+				if (o instanceof Date) return new Date(o);
+			}
+
 			const isRoot = !parentProp;
 			return new Proxy(actualObjectInProp || parent, {
-				set: (target, property, value) => {
+				set: (target, property, value, receiver) => {
 					if (isRoot) {
-						// target should be parent.
-						// property+value should be direct child.
 						self._state.next({ ...parent, [property]: value });
 					} else {
-						// somehow value becomes a proxy sometimes
-						// which is not what we want
-						// but too tired to reason about this now
-
-						// propagate upward.
-						// this should eventually call the root setter.
-						parent[parentProp] = { ...parent[parentProp], [property]: value };
+						const copy = makeCopy(actualObjectInProp);
+						copy[property] = value;
+						// In case we're re-using the same object, also update the actual value.
+						target[property] = value;
+						// this will update the parent observable (which bubbles and calls next on the observable)
+						parent[parentProp] = copy;
 					}
 					return true;
 				},
@@ -128,11 +152,11 @@ abstract class ServiceWithStream<T extends object> {
 					const actualObjectInTarget = isRoot
 						? parent[property]
 						: actualObjectInProp[property];
-					// for the root: target === parent and is not a proxy
-					// we want to make sure we pass ourselves down if we're the root.
-					if (actualObjectInTarget.constructor === Object)
+					if (isMutableObject(actualObjectInTarget)) {
 						return createProxy(receiver, property, actualObjectInTarget);
-					else return actualObjectInTarget;
+					} else {
+						return actualObjectInTarget;
+					}
 				},
 			});
 		}
@@ -146,88 +170,86 @@ abstract class ServiceWithStream<T extends object> {
 }
 
 class TreebankSelectionService extends ServiceWithStream<TreebankSelectionServiceState> {
-	constructor() {
-		super({})
+	constructor(private treebanks: TreebankService) {
+		super({});
 	}
 
-	private getOrCreateState(provider: string, id: string): TreebankSelectionState {
-		return this.state[provider]?.[id] || {id, provider, selected: false, components: new Set()};
+	private getOrCreateState(tb: TreebankFull): TreebankSelectionState {
+		if (!this.state[tb.provider]?.[tb.id]) {
+			const p = this.state[tb.provider] = this.state[tb.provider] ?? {};
+			p[tb.id] = {id: tb.id, provider: tb.provider, selected: false, components: {}};
+		}
+		return this.state[tb.provider][tb.id];
+	}
+
+	public async selectTreebank(tb: Treebank, select?: boolean) {
+		tb = await this.treebanks.loadTreebank(tb);
+		const s = this.getOrCreateState(tb);
+		select = select ?? !s.selected;
+		s.selected = select;
+		if (select) {
+			// when selecting a treebank and no components selected, select all components
+			const allComponents = Object.keys(tb.components);
+			if (!this.anySelected(s, allComponents))
+				this.selectComponents(tb, allComponents, true);
+		}
+		// don't deselect components when deselecting a treebank
+		// it's nice to the user to keep the components selected so they don't have to reselect them.
+	}
+
+	public async selectComponents(tb: Treebank, components: string[]|ComponentSet, select?: boolean) {
+		components = Array.isArray(components) ? components : this.getIds(components);
+		if (!components.length) return;
+
+		tb = await this.treebanks.loadTreebank(tb);
+		const s = this.getOrCreateState(tb);
+		// when toggling, select all if not currently all selected.
+		select = select ?? !this.allSelected(s, components); 
+
+		if (!select) components.forEach(c => delete s.components[c]);
+		else if (tb.multiOption) components.forEach(c => s.components[c] = true);
+		else s.components = {[components[0]]: true};
+
+		s.selected = Object.keys(s.components).length > 0;
+	}
+
+	public async selectComponent(treebank: Treebank, component: Component|string, newState?: boolean) {
+		const id = typeof component === 'string' ? component : component.id;
+		return this.selectComponents(treebank, [id], newState);
+	}
+
+	public selectSubset(treebank: TreebankStub, variant: ComponentSet, newState?: boolean) {
+		return this.selectComponents(treebank, this.getIds(variant), newState);
 	}
 
 	private allSelected(state: TreebankSelectionState, components: string[]): boolean {
-		return components.every(c => state.components.has(c));
+		return components.every(c => state.components[c]);
+	}
+	private anySelected(state: TreebankSelectionState, components: string[]): boolean {
+		return components.some(c => state.components[c]);
 	}
 
-	private toggleSelection(provider: string, id: string, state: TreebankSelectionState, select: boolean, components: string[]) {
-		const newState = this.getOrCreateState(provider, id);
-
-
-		const newComponentState = new Set(state.components);
-		if (components.length && select && !treebank.multiOption) {
-			newComponentState.clear();
-		}
-		if (select) components.forEach(c => newComponentState.add(c));
-		else components.forEach(c => newComponentState.delete(c));
-		return {...state, selected: newComponentState.size > 0, components: newComponentState};
-	}
-
-	private getIds(components: Array<Component|undefined>) {
-		return components.filter(c => c && !c.disabled).map(c => c.id);
+	private getIds(set: ComponentSet): string[] {
+		return set.components.filter(c => c && !c.disabled).map(c => c.id);
 	}
 
 	public serialize(): Record<string, Record<string, string[]>> {
 		const result: Record<string, Record<string, string[]>> = {};
-		this.state.forEach((state, treebank) => {
-			if (!state.selected || !state.components.size) return;
-			const providerResult = result[treebank.provider] = result[treebank.provider] || {};
-			providerResult[treebank.id] = Array.from(state.components);
-		});
+		for (const {provider, id, selected, components} of Object.values(this.state).flatMap(e => Object.values(e))) {
+			if (!selected) continue;
+			const providerResult = result[provider] = result[provider] || {};
+			providerResult[id] = Object.keys(components);
+		}
 		return result;
 	}
 
-	public deserialize(treebanks: TreebankLoaded[], data: Record<string, Record<string, string[]>>) {
-		this.state.clear();
-		for (const provider in data) {
-			for (const id in data[provider]) {
-				const treebank = treebanks.find(tb => tb.provider === provider && tb.id === id);
-				if (!treebank) { 
-					console.warn(`Could not restrore selection for treebank ${provider}:${id} because it doesn't exist.`);
-					continue; 
-				}
-				const state = this.getOrCreateState(treebank);
-				const selectedComponnets = data[provider][id];
-				this.toggleSelection(treebank, state, true, selectedComponnets);
-			}
-		}
-	}
-
-	public selectTreebank(treebank: TreebankLoaded, newState?: boolean) {
-		const state = this.state.get(treebank);
-		state.selected = newState ?? state.selected;
-	}
-
-	public selectSubset(treebank: TreebankLoaded, variant: ComponentSet, newState?: boolean) {
-		const state = this.getOrCreateState(treebank);
-		const ids = this.getIds(variant.components);
-		newState = newState ?? !this.allSelected(state, ids);
-		this.toggleSelection(treebank, state, newState, ids);
-	}
-
-	public selectGroup(treebank: TreebankLoaded, group: ComponentSet, newState?: boolean) {
-		const state = this.getOrCreateState(treebank);
-		const ids = this.getIds(group.components);
-		newState = newState ?? !this.allSelected(state, ids);
-		this.toggleSelection(treebank, state, newState, ids);
-	}
-
-	public selectComponent(treebank: TreebankLoaded, component: Component, newState?: boolean) {
-		const state = this.getOrCreateState(treebank);
-		newState = newState ?? !state.components.has(component.id);
-		this.toggleSelection(treebank, state, newState, [component.id]);
+	public deserialize(data: Record<string, Record<string, string[]>>) {
+		this.state = {};
+		Object.entries(data).forEach(([provider, tbs]) => Object.entries(tbs).forEach(([id, components]) => {
+			this.selectComponents({provider, id, state: 'stub', loading: false}, components, true);
+		}));
 	}
 }
-
-
 
 namespace Django {
 	export type TreebankResponse = Array<{
@@ -313,7 +335,7 @@ function ComponentHelper<T>(p: {
 	getGroup: (c: T) => string|undefined,
 	setVariantInfo?(v: ComponentSet): ComponentSet,
 	setGroupInfo?(g: ComponentSet): ComponentSet,
-}): Pick<TreebankLoaded, 'components'|'variants'|'groups'> { 
+}): Pick<TreebankFull, 'components'|'variants'|'groups'> { 
 	function create(id: string, cb?: ((v: ComponentSet)=> ComponentSet)): ComponentSet {
 		const v: ComponentSet = {
 			id,
@@ -366,13 +388,13 @@ abstract class TreebankLoader {
 	}
 
 	abstract loadPreviews(): Promise<Treebank[]>;
-	abstract loadTreebank(treebank: Treebank): Promise<TreebankLoaded>;
-	abstract loadTreebanks(treebanks: Treebank[]): Promise<TreebankLoaded[]>;
+	abstract loadTreebank(treebank: Treebank): Promise<TreebankFull>;
+	abstract loadTreebanks(treebanks: Treebank[]): Promise<TreebankFull[]>;
 }
 
 class TreebankLoaderDjango extends TreebankLoader {
 	private previewUrl() { return `${this.baseUrl}/treebanks/treebank/`; }
-	private componentsUrl(treebank: TreebankBase) { return `${this.baseUrl}/treebanks/${treebank.id}/components/`; }
+	private componentsUrl(treebank: {id: string}) { return `${this.baseUrl}/treebanks/${treebank.id}/components/`; }
 	
 	async loadPreviews(): Promise<Treebank[]> {
 		const response = await this.http.get<Django.TreebankResponse>(this.previewUrl()).toPromise();
@@ -383,14 +405,21 @@ class TreebankLoaderDjango extends TreebankLoader {
 			displayName: title, 
 			multiOption: true, 
 			owner: '', 
-			state: 'stub'
+			state: 'partial',
+			loading: false
 		}));
 	}
 
-	async loadTreebank(treebank: Treebank): Promise<TreebankLoaded> {
+	async loadTreebank(treebank: Treebank): Promise<TreebankFull> {
 		if (treebank.state === 'loaded') return treebank;
+		// HACK: solve this case.
+		// we can get a partial here if the treebank was selected before loading (i.e. from the url on navigation).
+		if (treebank.state === 'stub') {
+			treebank = (await this.loadPreviews()).find(tb => tb.id === treebank.id) as TreebankBase;
+		}
+		
 		const response = this.http.get<Django.ComponentResponse>(this.componentsUrl(treebank)).toPromise();
-		return response.then<TreebankLoaded>(r => ({
+		return response.then<TreebankFull>(r => ({
 			...treebank,
 			...ComponentHelper({
 				components: r,
@@ -409,7 +438,7 @@ class TreebankLoaderDjango extends TreebankLoader {
 		}));
 	}
 	
-	async loadTreebanks(treebanks: Treebank[]): Promise<TreebankLoaded[]> {
+	async loadTreebanks(treebanks: Treebank[]): Promise<TreebankFull[]> {
 		return Promise.all(treebanks.map(p => this.loadTreebank(p)));
 	}
 }
@@ -441,25 +470,27 @@ class TreebankLoaderLegacy extends TreebankLoader {
 				setVariantInfo: v => { v.displayName = treebank.variants?.[v.id]?.display ?? ''; return v; },
 			}),
 			state: 'loaded',
+			loading: false,
 		}));
 	}
 
-	async loadTreebank(treebank: Treebank): Promise<TreebankLoaded> {
-		return treebank as TreebankLoaded;
+	async loadTreebank(treebank: Treebank): Promise<TreebankFull> {
+		if (treebank.state !== 'loaded') throw new Error('Treebank not loaded - should never happen in legacy loader');
+		return treebank as TreebankFull;
 	}
-	async loadTreebanks(treebanks: Treebank[]): Promise<TreebankLoaded[]> {
-		return treebanks as TreebankLoaded[];
+	async loadTreebanks(treebanks: Treebank[]): Promise<TreebankFull[]> {
+		return Promise.all(treebanks.map(tb => this.loadTreebank(tb)));
 	}
 }
 
 class TreebankLoaderLegacyUpload extends TreebankLoader {
 	private previewUrl(): string { return this.baseUrl + '/index.php/api/treebank/'; }
-	private componentsUrl(treebank: TreebankBase) { return `${this.baseUrl}/treebank/show/${encodeURIComponent(treebank.id)}/`; }
-	private metadataUrl(treebank: TreebankBase) { return `${this.baseUrl}/treebank/metadata/${encodeURIComponent(treebank.id)}/`; }
+	private componentsUrl(treebank: {id: string}) { return `${this.baseUrl}/treebank/show/${encodeURIComponent(treebank.id)}/`; }
+	private metadataUrl(treebank: {id: string}) { return `${this.baseUrl}/treebank/metadata/${encodeURIComponent(treebank.id)}/`; }
 
-	loadPreviews(): Promise<Treebank[]> {
+	async loadPreviews(): Promise<Treebank[]> {
 		return this.http.get<LegacyUpload.TreebankResponse>(this.previewUrl()).toPromise()
-		.then<Treebank[]>(uploads => 
+		.then<TreebankBase[]>(uploads => 
 			uploads.map(u => ({
 				provider: 'upload',
 				id: u.id,
@@ -467,13 +498,19 @@ class TreebankLoaderLegacyUpload extends TreebankLoader {
 				displayName: u.title,
 				multiOption: true,
 				owner: u.email,
-				state: 'stub',
+				state: 'partial',
+				loading: false,
 			})
 		));
 	}
-	loadTreebank(treebank: Treebank): Promise<TreebankLoaded> {
+	async loadTreebank(treebank: Treebank): Promise<TreebankFull> {
+		if (treebank.state === 'loaded') return treebank;
+		if (treebank.state === 'stub') {
+			treebank = (await this.loadPreviews()).find(tb => tb.id === treebank.id) as TreebankBase;
+		}
+
 		return this.http.get<LegacyUpload.ComponentResponse>(this.componentsUrl(treebank)).toPromise()
-		.then<TreebankLoaded>(r => ({
+		.then<TreebankFull>(r => ({
 			...treebank,
 			...ComponentHelper({
 				components: r,
@@ -491,21 +528,24 @@ class TreebankLoaderLegacyUpload extends TreebankLoader {
 			state: 'loaded',
 		}));
 	}
-	loadTreebanks(treebanks: Treebank[]): Promise<TreebankLoaded[]> {
+	async loadTreebanks(treebanks: Treebank[]): Promise<TreebankFull[]> {
 		return Promise.all(treebanks.map(tb => this.loadTreebank(tb)));
 	}
 }
 
-class TreebankService {
-	private treebanks: Treebank[] = [];
+class TreebankService extends ServiceWithStream<Treebank[]> {
 	private loaders: TreebankLoader[] = [];
+	private loadingFinished$ = new Subject<TreebankFull>();
+	
+	public loading$ = new BehaviorSubject<boolean>(false);
 	
 	constructor(
 		private http: HttpClient,
 		private configurationService: ConfigurationService,
 	) {
-		this.loading$.next(true);
+		super([]);
 		
+		this.loading$.next(true);
 		Promise.all([
 			configurationService.getRootUrl(), 
 			configurationService.getLegacyUploadUrl(),
@@ -522,77 +562,167 @@ class TreebankService {
 		.then(() => this.loading$.next(false));
 	}
 
-	public treebanks$ = new BehaviorSubject<Treebank[]>(this.treebanks);
-	public loading$ = new BehaviorSubject<boolean>(false);
-	private loadingFinished$ = new Subject<TreebankLoaded>();
-	private untilLoaded$(tb: Treebank) {
-		const loaded = this.loadingFinished$.pipe(filter(tb => tb.provider === tb.provider && tb.id === tb.id));
-		return this.loadingFinished$.pipe(takeUntil(loaded), ignoreElements());
+	/** Replace the treebank in our state array. Should automatically emit on the stream. */
+	private update(tb: Treebank) { 
+		// Bypass proxy
+		let i = this._state.value.findIndex(t => t.provider === tb.provider && t.id === tb.id);
+		if (i === -1) this.state.push(tb);
+		else this.state[i] = tb;
+	}
+
+	private untilLoaded$(tb: Treebank): Observable<TreebankFull> {
+		if (tb.state === 'loaded') 
+			return of(tb as TreebankFull);
+		else
+			return this.loadingFinished$.pipe(filter(tb => tb.provider === tb.provider && tb.id === tb.id), first());
 	}
 
 	private async loadPreviews() {
 		return Promise.all(this.loaders.map(async loader => {
 			const previews = await loader.loadPreviews();
-			this.treebanks.push(...previews);
-			this.treebanks$.next(this.treebanks);
+			previews.forEach(tb => {
+				const i = this.state.findIndex(t => t.provider === tb.provider && t.id === tb.id);
+				if (i !== -1) this.state[i] = tb;
+				else this.state.push(tb);
+			});
 		}))
 	}
 
-	public async loadTreebank(treebank: Treebank): Promise<void> {
+	public async loadTreebank(treebank: Treebank): Promise<TreebankFull> {
+		if (treebank.loading) 
+			return this.untilLoaded$(treebank).toPromise(); // should eventually return the loaded treebank
 		if (treebank.state === 'loaded') 
-			return;
-		if (treebank.state === 'loading') 
-			return this.untilLoaded$(treebank).toPromise();
-
-		const index = this.treebanks.indexOf(treebank);
-		const loader = this.loaders.find(l => l.provider === treebank.provider);
+			return treebank;
 		
-		this.treebanks[index] = { ...treebank, state: 'loading' };
-		this.treebanks$.next(this.treebanks);
-		this.treebanks[index] = await loader.loadTreebank(treebank);
-		this.treebanks$.next(this.treebanks);
+		const loader = this.loaders.find(l => l.provider === treebank.provider);
+		if (!loader) throw new Error(`Loader not found for provider ${treebank.provider}`);
+		this.update({ ...treebank, loading: true });
+		const loaded = await loader.loadTreebank(treebank);
+		this.update(loaded);
+		return loaded;
 	}
 }
 
-
-// Selection service is annoying, because it needs the loaded treebanks
-// but maybe we can have some sort of a getSelection and getSelectionWithTreebanks where one is async
-// and the other one is not.
-// e.g. for sending to the server and for rendering.
-
-
 type RecursivePartial<T> = { [P in keyof T]?: RecursivePartial<T[P]>; }
-abstract class StateManager<T> {
-	protected readonly _state$: BehaviorSubject<Readonly<T>>;
-	public get state$(): Observable<Readonly<T>> { return this._state$.asObservable();  }
+type QueryParams = Record<string, string|object[]|Record<string, string>>;
+abstract class StepThing<T> {
+	async canLeave(state: T): Promise<boolean> { return true; }
+	async canEnter(state: T): Promise<boolean> { return true; }
 
-	constructor(queryParams: Record<string, any>) {
-		this._state$ = new BehaviorSubject<T>(this.decodeGlobalState(queryParams));
+	abstract decodeState(state: T, urlState: QueryParams): Promise<TransitionResult>;
+	async leave(state: T): Promise<TransitionResult> { return this.canLeave(state) ? TransitionResult.ok() : TransitionResult.error('Cannot leave current step'); }
+	async enter(state: T): Promise<TransitionResult> { return this.canEnter(state) ? TransitionResult.ok() : TransitionResult.error('Cannot enter current step'); }
+}
+
+class TransitionResult {
+	constructor(public ok: boolean, public error?: string) {}
+	static ok(): TransitionResult {return new TransitionResult(true);}
+	static error(message: string): TransitionResult {return new TransitionResult(false, message);}
+}
+
+
+type Primitive =
+  | bigint
+  | boolean
+  | null
+  | number
+  | string
+  | symbol
+  | undefined;
+
+type JSONValue = Primitive | JSONObject | JSONArray;
+
+interface JSONObject {
+  [key: string]: JSONValue;
+}
+
+interface JSONArray extends Array<JSONValue> { }
+
+abstract class StepBasedState<State extends JSONObject|JSONArray, T extends object = QueryParams> extends ServiceWithStream<State&{
+	/** Step is always the current thing on screen. It does not update until transitioning becomes false. */
+	step: number, 
+	transitioning: boolean
+}> {
+	public abstract get urlState$(): Observable<T>;
+	public get canEnterNextStep$() { 
+		return this.state$.pipe(switchMap(s => {
+			return this.state.step < this.steps.length - 1 && this.steps[this.state.step + 1].canEnter(s); 
+		}))
+	}
+	constructor(initialState: State, protected steps: StepThing<StepBasedState<State, T>>[], urlState: QueryParams) {
+		super({...initialState, step: 0, transitioning: false})
+		this.decodeState(urlState);
+	}
+	
+	protected async advanceUntil(step: number): Promise<TransitionResult> {
+		while (this.state.step < step) {
+			const r = await this.advanceStep();
+			if (!r.ok) return r;
+		}
+		return TransitionResult.ok();
+	}
+	protected async returnUntil(step: number): Promise<TransitionResult> {
+		while (this.state.step > step) {
+			const r = await this.returnStep();
+			if (!r.ok) return r;
+		}
+		return TransitionResult.ok();
 	}
 
-	public async update(modifier: RecursivePartial<T>) {
-		const newState = { ...this._state$.value, ...modifier };
-		this._state$.next(newState);
+	private async transition(cur: number, next: number) {
+		if (Math.abs(cur - next) !== 1) return TransitionResult.error('Invalid transition');
+		if (this.state.transitioning) return TransitionResult.error('Already transitioning');
+
+		const curStep = this.steps[cur];
+		const nextStep = this.steps[next];
+		if (!curStep) return TransitionResult.error(`Cannot transition from non-existent step ${cur}`);
+		if (!nextStep) return TransitionResult.error(`Cannot transition to non-existent step ${next}`);
+
+		this.state.transitioning = true;
+		return curStep.leave(this).then(() => nextStep.enter(this)).then(r => {
+			this.state.step = next;
+			this.state.transitioning = false;
+			return r;
+		})
 	}
 
-	abstract decodeGlobalState(queryParams: Record<string, any>): T;
-	abstract encodeGlobalState(state: T): Record<string, any>;
-	abstract performAsyncLoadingActions(state: T): Promise<void>;
+	async advanceStep(): Promise<TransitionResult> {
+		return this.transition(this.state.step, this.state.step + 1);
+	}
+	async returnStep(): Promise<TransitionResult> {
+		return this.transition(this.state.step, this.state.step - 1);
+	}
+
+	protected abstract decodeStateImpl(queryParams: QueryParams): Promise<TransitionResult>;
+	protected abstract encodeStateImpl(state: State): QueryParams;
+	private async decodeState(queryParams: QueryParams) {
+		const r = await this.decodeStateImpl(queryParams);
+		if (!r.ok) return r;
+		
+		if ('step' in queryParams) {
+			const step = parseInt(queryParams.step as any);
+			if (isNaN(step) || step < 0 || step >= this.steps.length) return true; // invalid step, stay on initial step.
+			if (this.state.step < step) return this.advanceUntil(step);
+			if (this.state.step > step) return this.returnUntil(step);
+		}
+
+		return true;
+	}
 
 	protected decodeBool(value: string|undefined) { return value === '1' ? true : value === '0' ? false : undefined; }
 	protected encodeBool(value: boolean|undefined) { return value === true ? '1' : value === false ? '0' : undefined; }
 }
 
-type GlobalStateBase = {
-	treebanks: TreebankService;
-	selection: TreebankSelection;
-	
-	currentStep: number;
-}
+// these should be 100% url types
 
-type ExampleBasedState = GlobalStateBase & {
+
+type ExampleBasedState = {
+	selectedTreebanks: ReturnType<(InstanceType<typeof TreebankSelectionService>)['serialize']>;
+
 	inputSentence?: string;
 	xpath?: string;
+
+	test: string[];
 	
 	filterValues: FilterValues;
 	
@@ -620,25 +750,53 @@ type ExampleBasedState = GlobalStateBase & {
 	ignoreTopNode: boolean;
 	/** Respect word order */
 	respectOrder: boolean;
+	
 }
 
-class StateManagerExampleBased extends StateManager<ExampleBasedState> {
+class StateManagerExampleBased extends StepBasedState<FilterValues> {
 	private readonly attributesSeparator = ':';
 
-	constructor(private http: HttpClient, private configurationService: ConfigurationService, queryParams: Record<string, any>) {
-		super(queryParams);
+	constructor(
+		private http: HttpClient, 
+		private configurationService: ConfigurationService, 
+		private alpinoService: AlpinoService,
+		private treebankService: TreebankService,
+		private treebankSelectionService: TreebankSelectionService,
+		queryParams: QueryParams
+	) {
+		super({
+			selectedTreebanks: {},
+			filterValues: {},
+			attributes: [],
+			exampleXml: '',
+			ignoreTopNode: false,
+			isCustomXPath: false,
+			respectOrder: false,
+			retrieveContext: false,
+			subTreeXml: '',
+			tokens: [],
+			variableProperties: [],
+			test
+		}, [
+			new ExampleBasedStep0(),
+			new ExampleBasedStep1()
+		], queryParams)
+
+
+		// we now have an object that has the current json state
+		// but some of this state is contained within nested services
+		// and we also want to update the parent service when the nested service has an update
+		// but how do we know when to do that in the parent service
+		// we need some way to propagate that data up
+		// the problem is that if we do this.state.selection.someMutation() 
+		// then what will the proxy do
+		// probably call the function, which works
+		// BUT, the problem will be it will try to spread the object
+		// and I'm not positive you can do that with classes
+
 	}
 
-	encodeGlobalState(state: ExampleBasedState): Record<string, any> {
-		return {};
-	}
-
-	
-	// we want to expose the loading state on the treebank itself maybe, 
-	// perhaps we can create a stub-stub version of the treebank that we can create from the url.
-	// the components can then use this to show a loading state.
-
-	decodeGlobalState(queryParams: Record<string, any>): ExampleBasedState {
+	decodeStateImpl(queryParams: QueryParams): Promise<TransitionResult> {
 		let attributes: string[];
 		let isCustomXPath: boolean;
 		if (Array.isArray(queryParams.attributes)) {
@@ -654,54 +812,95 @@ class StateManagerExampleBased extends StateManager<ExampleBasedState> {
 		// so we need to load the treebanks first, and then load the state (if there is a selection in the query params)
 		// in the selection component, we want to 
 
-		return {
-			treebanks: new TreebankService(this.http, this.configurationService),
-			selection: new TreebankSelection({}),
-			xpath: queryParams.xpath || undefined,
-			inputSentence: queryParams.inputSentence || undefined,
-			isCustomXPath,
-			attributes: this.alpinoService.attributesFromString(attributes),
-			retrieveContext: this.decodeBool(queryParams.retrieveContext),
-			respectOrder: this.decodeBool(queryParams.respectOrder),
-			ignoreTopNode: this.decodeBool(queryParams.ignoreTopNode)
-		};
+		
+		this.state.treebanks = new TreebankService(this.http, this.configurationService),
+		this.state.selection = new TreebankSelection({}),
+		this.state.xpath = queryParams.xpath || undefined,
+		this.state.inputSentence = queryParams.inputSentence || undefined,
+		this.state.isCustomXPath =
+		this.state.attributes = this.alpinoService.attributesFromString(attributes),
+		this.state.retrieveContext = this.decodeBool(queryParams.retrieveContext),
+		this.state.respectOrder = this.decodeBool(queryParams.respectOrder),
+		this.state.ignoreTopNode = this.decodeBool(queryParams.ignoreTopNode)
+	
+	}
 
-
-		// need to wait a bit for the selection etc to become available.
-		// ideally we only want to load the treebanks when we need them
-
-
-		// what is the flow here
-		// user clicks a treebank to select it
-		// we async load it, then process the selection
-		// all is good in the world
-
-		// but what if we have a query param that selects a treebank
-		// then we can already return the state, but without the treebanks/selection.
-		// we can then load the treebanks, process the selection async
-
-		// we need a second function that performs all required async actions to get the state ready
-		// after that, we can jump to the correct step, as the state should be valid
-
+	inputSentence(sentence: string) {
+		this.state.inputSentence = sentence;
 	}
 }
 
 
+// class StateManagerExampleBased extends StepBasedState<QueryParams, ExampleBasedState> {
+// 	private readonly attributesSeparator = ':';
+
+// 	constructor(
+// 		private http: HttpClient, 
+// 		private configurationService: ConfigurationService, 
+// 		private treebankService: TreebankService,
+// 		private treebankSelectionService: TreebankSelectionService,
+// 	) {
+// 		super();
+// 	}
+
+// 	protected get urlState$(): Observable<QueryParams> {
+// 		return this.state$.pipe(skip(1), take(1), first());
+// 	}
+
+	
+// 	// we want to expose the loading state on the treebank itself maybe, 
+// 	// perhaps we can create a stub-stub version of the treebank that we can create from the url.
+// 	// the components can then use this to show a loading state.
+
+// 	decodeGlobalState(queryParams: Record<string, any>): ExampleBasedState {
+// 		let attributes: string[];
+// 		let isCustomXPath: boolean;
+// 		if (Array.isArray(queryParams.attributes)) {
+// 			// fallback for old URLs
+// 			attributes = queryParams.attributes;
+// 			isCustomXPath = true; // preserve the existing XPath
+// 		} else {
+// 			attributes = queryParams.attributes?.split(this.attributesSeparator);
+// 			isCustomXPath = this.decodeBool(queryParams.isCustomXPath)
+// 		}
+
+// 		// ideally you have the selected treebanks here, or nothing makes any sense.
+// 		// so we need to load the treebanks first, and then load the state (if there is a selection in the query params)
+// 		// in the selection component, we want to 
+
+// 		return {
+// 			treebanks: new TreebankService(this.http, this.configurationService),
+// 			selection: new TreebankSelection({}),
+// 			xpath: queryParams.xpath || undefined,
+// 			inputSentence: queryParams.inputSentence || undefined,
+// 			isCustomXPath,
+// 			attributes: this.alpinoService.attributesFromString(attributes),
+// 			retrieveContext: this.decodeBool(queryParams.retrieveContext),
+// 			respectOrder: this.decodeBool(queryParams.respectOrder),
+// 			ignoreTopNode: this.decodeBool(queryParams.ignoreTopNode)
+// 		};
+
+
+// 		// need to wait a bit for the selection etc to become available.
+// 		// ideally we only want to load the treebanks when we need them
+
+
+// 		// what is the flow here
+// 		// user clicks a treebank to select it
+// 		// we async load it, then process the selection
+// 		// all is good in the world
+
+// 		// but what if we have a query param that selects a treebank
+// 		// then we can already return the state, but without the treebanks/selection.
+// 		// we can then load the treebanks, process the selection async
+
+// 		// we need a second function that performs all required async actions to get the state ready
+// 		// after that, we can jump to the correct step, as the state should be valid
+
+// 	}
+// }
+
+
 // we need some notion of a State object of some sort.
 // we can create a state manager that exposes some of it.
-
-
-abstract class ComponentWithStateAndSteps<T> {
-	constructor(private steps: Step<T>[]) {}
-}
-
-/** A step has a number and a function that performs the necessary actions when entering a step */
-abstract class Step<T> {
-	constructor(public number: number) {}
-	// Makes sure the step is entered correctly
-	abstract canLeaveStep(state: T): boolean;
-	abstract canEnterStep(state: T): boolean;
-	abstract enterStep(state: T): T;
-	abstract leaveStep(state: T): T;
-}
 
