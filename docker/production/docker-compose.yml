@@ -43,7 +43,7 @@ services:
 
   frontend: 
     container_name: gretel-frontend
-    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-frontend
+    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-frontend:${version:-latest}
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile
@@ -60,7 +60,7 @@ services:
       - prod
       - ""
     container_name: gretel-backend
-    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-backend
+    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-backend:${version:-latest}
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile
@@ -86,7 +86,7 @@ services:
       - development
       - dev
     container_name: gretel-backend
-    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-backend
+    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-backend:${version:-latest}-dev
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile
@@ -115,7 +115,7 @@ services:
       - prod
       - ""
     container_name: gretel-celery
-    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-backend
+    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-backend:${version:-latest}
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile
@@ -138,7 +138,7 @@ services:
       - development
       - dev
     container_name: gretel-celery
-    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-backend
+    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-backend:${version:-latest}-dev
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile
@@ -177,7 +177,7 @@ services:
     profiles: 
       - development
       - dev
-    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-basex
+    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-basex:${version:-latest}-dev
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile.basex
@@ -191,7 +191,7 @@ services:
       - production
       - prod
       - ""
-    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-basex
+    image: ${REGISTRY:-instituutnederlandsetaal}/gretel5-basex:${version:-latest}
     build: 
       context: ../..
       dockerfile: docker/production/Dockerfile.basex
