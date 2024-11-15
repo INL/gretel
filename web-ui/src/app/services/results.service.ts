@@ -629,12 +629,12 @@ export type HitWithOrigin = Hit & {
 };
 
 
-export type FilterValue = FilterByField | FilterByXPath;
+export type FilterValue = FilterByField;// | FilterByXPath;
 export type FilterByField =
     FilterSingleValue
-    | FilterRangeValue<string, 'date'>
-    | FilterRangeValue<number, 'int'>
-    | FilterMultipleValues<string, 'text'>;
+    // | FilterRangeValue<string, 'date'>
+    // | FilterRangeValue<number, 'int'>
+    // | FilterMultipleValues<string, 'text'>;
 
 export type FilterValues = Record<string, FilterValue>
 
@@ -645,7 +645,7 @@ export interface FilterSingleValue {
     value: string;
 }
 
-export interface FilterRangeValue<T, U extends string> {
+export interface FilterRangeValue<T extends number|string, U extends string> {
     type: 'range';
     dataType: U;
     field: string;
@@ -665,7 +665,7 @@ export interface FilterByXPath {
     field: string;
     type: 'xpath';
     label: string;
-    location: Location;
+    location: {firstColumn: number, lastColumn: number, line: number};
     /**
      * The predicate to add to the node to filter it.
      */
