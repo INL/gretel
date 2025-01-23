@@ -1,6 +1,6 @@
 <div class="content">
     <form (ngSubmit)="upload()">
-        <label><input type="text" [(ngModel)]="treebankName"> Treebank Name</label><br>
+        <label><input type="text" [(ngModel)]="treebankName" name="treebank_name"> Treebank Name</label><br>
         
         <label><input type="file" name="file" (change)="selectFile($event)"> File</label><br>
         <label><select name="input_format" [(ngModel)]="format">
